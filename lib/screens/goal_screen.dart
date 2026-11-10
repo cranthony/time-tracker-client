@@ -158,6 +158,11 @@ class _GoalScreenState extends State<GoalScreen> {
           () => _actions.retry(goal),
           when: () => _canRetry(goal),
         ),
+        HotkeyBinding(
+          const HotkeyTrigger.key(LogicalKeyboardKey.keyI),
+          () => _actions.deactivateUntil(goal),
+          when: () => goal.active,
+        ),
       ],
       child: Scaffold(
         appBar: AppBar(
@@ -422,9 +427,12 @@ class _GoalScreenState extends State<GoalScreen> {
           ),
         ),
       if (goal.active)
-        OutlinedButton(
-          onPressed: () => _actions.deactivateUntil(goal),
-          child: const Text(_untilLabel),
+        HotkeyHint(
+          Hotkey.deactivateUntil,
+          child: OutlinedButton(
+            onPressed: () => _actions.deactivateUntil(goal),
+            child: const Text(_untilLabel),
+          ),
         ),
     ],
   );

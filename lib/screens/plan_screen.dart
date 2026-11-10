@@ -706,19 +706,25 @@ class _PlanScreenState extends State<PlanScreen> {
     if (check case (final question, final explanation, final confirm)) {
       final confirmed = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(question),
-          content: Text(explanation),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Keep it'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: Text(confirm),
-            ),
-          ],
+        builder: (context) => SaveHotkey(
+          // Moving it can be undone; deleting it, not by a stray key.
+          onSave: confirm == 'Delete'
+              ? null
+              : () => Navigator.of(context).pop(true),
+          child: AlertDialog(
+            title: Text(question),
+            content: Text(explanation),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep it'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(confirm),
+              ),
+            ],
+          ),
         ),
       );
       return confirmed == true;

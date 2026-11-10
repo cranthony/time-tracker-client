@@ -830,6 +830,7 @@ class GoalActions {
         title: 'Make it fit?',
         text: _fitText(fit),
         action: 'Move it',
+        ctrlEnter: true,
       );
       if (!ok || !context.mounted) return;
     }
@@ -911,8 +912,8 @@ class GoalActions {
       lastDate: DateTime(at.year + 10),
     );
     if (day == null || !context.mounted) return;
-    final time = await showTimePicker(
-      context: context,
+    final time = await showTimeOfDayPicker(
+      context,
       initialTime: TimeOfDay.fromDateTime(at),
     );
     if (time == null || !context.mounted) return;
@@ -983,27 +984,33 @@ class GoalActions {
 
   // -- Asking ----------------------------------------------------------------
 
+  /// Whether [action] goes ahead. With [ctrlEnter], Ctrl+Enter presses
+  /// it: not for one that can't be undone.
   Future<bool> _confirm({
     required String title,
     required String text,
     required String? action,
+    bool ctrlEnter = false,
   }) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text(title),
-          content: Text(text),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(action == null ? 'OK' : 'Cancel'),
-            ),
-            if (action != null)
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(action),
+        builder: (context) => SaveHotkey(
+          onSave: ctrlEnter ? () => Navigator.of(context).pop(true) : null,
+          child: AlertDialog(
+            title: Text(title),
+            content: Text(text),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(action == null ? 'OK' : 'Cancel'),
               ),
-          ],
+              if (action != null)
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(action),
+                ),
+            ],
+          ),
         ),
       ) ??
       false;
@@ -1437,77 +1444,78 @@ class _DeadlinesDialogState extends State<_DeadlinesDialog> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ready = widget.goals.every((g) => _picked.containsKey(g.id));
-    return AlertDialog(
-      title: Text(
-        widget.goals.length == 1 ? 'When is it due?' : 'When are they due?',
-      ),
-      content: SizedBox(
-        width: 420,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Text(
-              'An active goal needs a deadline.',
-              style: theme.textTheme.bodySmall,
-            ),
-            for (final goal in widget.goals) ...[
-              const SizedBox(height: 12),
-              Text(goalTitle(goal), style: theme.textTheme.titleSmall),
+    final done = ready ? () => Navigator.of(context).pop(_picked) : null;
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: Text(
+          widget.goals.length == 1 ? 'When is it due?' : 'When are they due?',
+        ),
+        content: SizedBox(
+          width: 420,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
               Text(
-                _picked[goal.id] == null
-                    ? 'No deadline yet'
-                    : 'Due ${deadlineLabel(context, _picked[goal.id])}',
-                style: TextStyle(
-                  color: _picked[goal.id] == null
-                      ? theme.colorScheme.error
-                      : theme.colorScheme.onSurfaceVariant,
+                'An active goal needs a deadline.',
+                style: theme.textTheme.bodySmall,
+              ),
+              for (final goal in widget.goals) ...[
+                const SizedBox(height: 12),
+                Text(goalTitle(goal), style: theme.textTheme.titleSmall),
+                Text(
+                  _picked[goal.id] == null
+                      ? 'No deadline yet'
+                      : 'Due ${deadlineLabel(context, _picked[goal.id])}',
+                  style: TextStyle(
+                    color: _picked[goal.id] == null
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              Wrap(
-                spacing: 6,
-                children: [
-                  ChoiceChip(
-                    label: const Text('End of today'),
-                    selected: _picked[goal.id] == endOfToday(widget.now),
-                    onSelected: (_) => setState(
-                      () => _picked[goal.id] = endOfToday(widget.now),
-                    ),
-                  ),
-                  ChoiceChip(
-                    label: const Text('End of this week'),
-                    selected: _picked[goal.id] == endOfWeek(widget.now),
-                    onSelected: (_) => setState(
-                      () => _picked[goal.id] = endOfWeek(widget.now),
-                    ),
-                  ),
-                  ActionChip(
-                    avatar: const Icon(Icons.event, size: 16),
-                    label: const Text('A date…'),
-                    onPressed: () => _date(goal),
-                  ),
-                  if (_parents(goal) case final parents?)
+                Wrap(
+                  spacing: 6,
+                  children: [
                     ChoiceChip(
-                      label: const Text("Parent's"),
-                      selected: _picked[goal.id] == parents,
-                      onSelected: (_) =>
-                          setState(() => _picked[goal.id] = parents),
+                      label: const Text('End of today'),
+                      selected: _picked[goal.id] == endOfToday(widget.now),
+                      onSelected: (_) => setState(
+                        () => _picked[goal.id] = endOfToday(widget.now),
+                      ),
                     ),
-                ],
-              ),
+                    ChoiceChip(
+                      label: const Text('End of this week'),
+                      selected: _picked[goal.id] == endOfWeek(widget.now),
+                      onSelected: (_) => setState(
+                        () => _picked[goal.id] = endOfWeek(widget.now),
+                      ),
+                    ),
+                    ActionChip(
+                      avatar: const Icon(Icons.event, size: 16),
+                      label: const Text('A date…'),
+                      onPressed: () => _date(goal),
+                    ),
+                    if (_parents(goal) case final parents?)
+                      ChoiceChip(
+                        label: const Text("Parent's"),
+                        selected: _picked[goal.id] == parents,
+                        onSelected: (_) =>
+                            setState(() => _picked[goal.id] = parents),
+                      ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: done, child: const Text('Activate')),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: ready ? () => Navigator.of(context).pop(_picked) : null,
-          child: const Text('Activate'),
-        ),
-      ],
     );
   }
 }
@@ -1556,8 +1564,10 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
       ? _made
       : null;
 
-  void _submit() =>
-      Navigator.of(context).pop((_chosen, _madeUsed, _statusNote(_note)));
+  void _submit() {
+    if (!_stillOpen(context)) return;
+    Navigator.of(context).pop((_chosen, _madeUsed, _statusNote(_note)));
+  }
 
   Future<void> _move(Goal child) async {
     final picked = await widget.pick(child);
@@ -1585,67 +1595,73 @@ class _LeftoversDialogState extends State<_LeftoversDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: Text('Mark ${goalTitle(widget.goal)} ${widget.status}'),
-      content: SizedBox(
-        width: 440,
-        child: ListView(
-          shrinkWrap: true,
-          children: [
-            Text(
-              'What becomes of what\'s still open under it?',
-              style: theme.textTheme.bodyMedium,
-            ),
-            for (final child in widget.open) ...[
-              const SizedBox(height: 12),
-              Text(goalTitle(child), style: theme.textTheme.titleSmall),
-              if (widget.tree.descendantsOf(child.id).any((g) => g.open))
-                Text(
-                  'Closing it closes what\'s open under it too.',
-                  style: theme.textTheme.bodySmall,
-                ),
-              const SizedBox(height: 4),
-              SegmentedButton<String>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 'done', label: Text('Done')),
-                  ButtonSegment(value: 'missed', label: Text('Missed')),
-                  ButtonSegment(value: 'obsolete', label: Text('Obsolete')),
-                  ButtonSegment(value: 'move', label: Text('Move…')),
-                ],
-                selected: {
-                  switch (_chosen[child.id]) {
-                    CloseLeftover(:final status) => status,
-                    _ => 'move',
-                  },
-                },
-                onSelectionChanged: (picked) {
-                  final value = picked.single;
-                  if (value == 'move') {
-                    _move(child);
-                  } else {
-                    setState(() => _chosen[child.id] = CloseLeftover(value));
-                  }
-                },
+    return SaveHotkey(
+      onSave: _submit,
+      child: AlertDialog(
+        title: Text('Mark ${goalTitle(widget.goal)} ${widget.status}'),
+        content: SizedBox(
+          width: 440,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Text(
+                'What becomes of what\'s still open under it?',
+                style: theme.textTheme.bodyMedium,
               ),
-              if (_chosen[child.id] case final MoveLeftover move) ...[
-                Text(_where(move), style: theme.textTheme.bodySmall),
-                if (move.fit.isNotEmpty)
-                  Text(_fitText(move.fit), style: theme.textTheme.bodySmall),
+              for (final child in widget.open) ...[
+                const SizedBox(height: 12),
+                Text(goalTitle(child), style: theme.textTheme.titleSmall),
+                if (widget.tree.descendantsOf(child.id).any((g) => g.open))
+                  Text(
+                    'Closing it closes what\'s open under it too.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                const SizedBox(height: 4),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'done', label: Text('Done')),
+                    ButtonSegment(value: 'missed', label: Text('Missed')),
+                    ButtonSegment(value: 'obsolete', label: Text('Obsolete')),
+                    ButtonSegment(value: 'move', label: Text('Move…')),
+                  ],
+                  selected: {
+                    switch (_chosen[child.id]) {
+                      CloseLeftover(:final status) => status,
+                      _ => 'move',
+                    },
+                  },
+                  onSelectionChanged: (picked) {
+                    final value = picked.single;
+                    if (value == 'move') {
+                      _move(child);
+                    } else {
+                      setState(() => _chosen[child.id] = CloseLeftover(value));
+                    }
+                  },
+                ),
+                if (_chosen[child.id] case final MoveLeftover move) ...[
+                  Text(_where(move), style: theme.textTheme.bodySmall),
+                  if (move.fit.isNotEmpty)
+                    Text(_fitText(move.fit), style: theme.textTheme.bodySmall),
+                ],
               ],
+              const SizedBox(height: 16),
+              _StatusNoteField(controller: _note, onSubmitted: _submit),
             ],
-            const SizedBox(height: 16),
-            _StatusNoteField(controller: _note, onSubmitted: _submit),
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: _submit,
+            child: Text('Mark ${widget.status}'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(onPressed: _submit, child: Text('Mark ${widget.status}')),
-      ],
     );
   }
 }
@@ -1674,24 +1690,36 @@ class _NoteDialogState extends State<_NoteDialog> {
     super.dispose();
   }
 
-  void _submit() => Navigator.of(context).pop((note: _statusNote(_note)));
+  void _submit() {
+    if (!_stillOpen(context)) return;
+    Navigator.of(context).pop((note: _statusNote(_note)));
+  }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.title),
-    content: SizedBox(
-      width: 440,
-      child: _StatusNoteField(controller: _note, onSubmitted: _submit),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
+  Widget build(BuildContext context) => SaveHotkey(
+    onSave: _submit,
+    child: AlertDialog(
+      title: Text(widget.title),
+      content: SizedBox(
+        width: 440,
+        child: _StatusNoteField(controller: _note, onSubmitted: _submit),
       ),
-      FilledButton(onPressed: _submit, child: Text(widget.action)),
-    ],
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: Text(widget.action)),
+      ],
+    ),
   );
 }
+
+/// Whether the dialog at [context] is still the one on top: Ctrl+Enter
+/// can reach both its hotkey and its note field's Enter, and the second
+/// mustn't pop what's under it.
+bool _stillOpen(BuildContext context) =>
+    ModalRoute.of(context)?.isCurrent ?? false;
 
 /// The field for a note on a goal's status change, focused as it's
 /// shown: optional, and Enter in it calls [onSubmitted].

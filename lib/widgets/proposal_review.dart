@@ -820,39 +820,42 @@ Future<bool> showRecheckedDialog(
 }) async =>
     await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('The calendar changed'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              message ??
-                  'It changed since this was planned, so it was planned '
-                      'again (revision ${proposal.revision}).',
-            ),
-            if (names.isNotEmpty) ...[
+      builder: (context) => SaveHotkey(
+        onSave: () => Navigator.of(context).pop(true),
+        child: AlertDialog(
+          title: const Text('The calendar changed'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message ??
+                    'It changed since this was planned, so it was planned '
+                        'again (revision ${proposal.revision}).',
+              ),
+              if (names.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('What changed:'),
+                for (final name in names) Text('• $name'),
+              ],
               const SizedBox(height: 12),
-              const Text('What changed:'),
-              for (final name in names) Text('• $name'),
+              Text(
+                'Confirm ${windowLabel(context, proposal.windowStart, proposal.through)} '
+                'again as it is now, or review it first?',
+              ),
             ],
-            const SizedBox(height: 12),
-            Text(
-              'Confirm ${windowLabel(context, proposal.windowStart, proposal.through)} '
-              'again as it is now, or review it first?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Review it'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Confirm again'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Review it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Confirm again'),
-          ),
-        ],
       ),
     ) ??
     false;
@@ -2457,34 +2460,34 @@ class _CreateAdditionDialogState extends State<_CreateAdditionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Make the goal now'),
-      content: SizedBox(
-        width: 400,
-        child: FieldHotkey(
-          'T',
-          child: TextField(
-            controller: _name,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Title'),
-            onChanged: (_) => setState(() {}),
+    final title = _name.text.trim();
+    final done = title.isEmpty
+        ? null
+        : () => Navigator.of(context).pop(CreateAddition(title, null));
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: const Text('Make the goal now'),
+        content: SizedBox(
+          width: 400,
+          child: FieldHotkey(
+            'T',
+            child: TextField(
+              controller: _name,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Title'),
+              onChanged: (_) => setState(() {}),
+            ),
           ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: done, child: const Text('Make it')),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _name.text.trim().isEmpty
-              ? null
-              : () =>
-                    Navigator.of(context)
-                        .pop(CreateAddition(_name.text.trim(), null)),
-          child: const Text('Make it'),
-        ),
-      ],
     );
   }
 }
@@ -2836,94 +2839,95 @@ class _CancelledDialogState extends State<_CancelledDialog> {
     final small = theme.textTheme.bodySmall?.copyWith(
       color: colors.onSurfaceVariant,
     );
-    return AlertDialog(
-      title: Text("$name didn't happen"),
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${_time(context, event.start)} – ${_time(context, event.end)}'
-              ' · ${merged ? 'Merged into another event' : 'Cancelled'}'
-              '${switch (event.decidedBy) {
-                DecidedBy.claude => ' by Claude',
-                DecidedBy.user => ' by you',
-                null => '',
-              }}',
-              style: small,
-            ),
-            if (!merged) ...[
-              const SizedBox(height: 16),
-              FieldHotkey(
-                'F',
-                child: SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Counts against follow-through'),
-                  subtitle: Text(
-                    counts
-                        ? 'A commitment dropped'
-                        : 'A change of plan: no one’s follow-through',
-                  ),
-                  secondary: _saving
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : null,
-                  value: counts,
-                  onChanged: _saving || widget.setCounts == null
-                      ? null
-                      : _setCounts,
-                ),
+    final done = _saving ? null : () => Navigator.of(context).pop();
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: Text("$name didn't happen"),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_time(context, event.start)} – ${_time(context, event.end)}'
+                ' · ${merged ? 'Merged into another event' : 'Cancelled'}'
+                '${switch (event.decidedBy) {
+                  DecidedBy.claude => ' by Claude',
+                  DecidedBy.user => ' by you',
+                  null => '',
+                }}',
+                style: small,
               ),
-              if (counts) ...[
-                const SizedBox(height: 4),
-                Text(
-                  event.followThrough.isEmpty
-                      ? 'No one’s follow-through tracks it.'
-                      : 'It counts against:',
-                  style: theme.textTheme.titleSmall,
-                ),
-                for (final who in event.followThrough)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.person_outline,
-                          size: 18,
-                          color: colors.error,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(child: Text(who)),
-                      ],
+              if (!merged) ...[
+                const SizedBox(height: 16),
+                FieldHotkey(
+                  'F',
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Counts against follow-through'),
+                    subtitle: Text(
+                      counts
+                          ? 'A commitment dropped'
+                          : 'A change of plan: no one’s follow-through',
                     ),
+                    secondary: _saving
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : null,
+                    value: counts,
+                    onChanged: _saving || widget.setCounts == null
+                        ? null
+                        : _setCounts,
                   ),
+                ),
+                if (counts) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    event.followThrough.isEmpty
+                        ? 'No one’s follow-through tracks it.'
+                        : 'It counts against:',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                  for (final who in event.followThrough)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline,
+                            size: 18,
+                            color: colors.error,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(who)),
+                        ],
+                      ),
+                    ),
+                ],
               ],
             ],
-          ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: _saving
+                ? null
+                : () => Navigator.of(context).pop(const AskAboutCancel()),
+            child: const Text('Note for Claude'),
+          ),
+          TextButton(
+            onPressed: _saving
+                ? null
+                : () => Navigator.of(context).pop(const PutBack()),
+            child: const Text('Put it back'),
+          ),
+          FilledButton(onPressed: done, child: const Text('Done')),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context).pop(const AskAboutCancel()),
-          child: const Text('Note for Claude'),
-        ),
-        TextButton(
-          onPressed: _saving
-              ? null
-              : () => Navigator.of(context).pop(const PutBack()),
-          child: const Text('Put it back'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : () => Navigator.of(context).pop(),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }

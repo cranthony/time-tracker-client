@@ -186,8 +186,8 @@ class _DayPickerDialogState extends State<DayPickerDialog> {
   /// the calendar after, if the date was being typed.
   Future<void> _pickTime() async {
     if (_typed && !_readTyped()) return;
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showTimeOfDayPicker(
+      context,
       initialTime: _time ?? widget.defaultTime,
     );
     if (!mounted) return;

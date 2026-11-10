@@ -1622,8 +1622,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
 
   Future<void> _pickTime(String key) async {
     final current = _time(key);
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showTimeOfDayPicker(
+      context,
       initialTime: TimeOfDay.fromDateTime(current),
     );
     if (picked == null || !mounted) return;
@@ -2285,22 +2285,25 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       final later = start.isAfter(DateTime.now());
       final wake = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: Text('Activate $it?'),
-          content: Text(
-            '$names ${waking.length == 1 ? 'is' : 'are'} inactive. Activate '
-            '$it ${later ? 'when' : 'from when'} this event starts?',
+        builder: (context) => SaveHotkey(
+          onSave: () => Navigator.of(context).pop(true),
+          child: AlertDialog(
+            title: Text('Activate $it?'),
+            content: Text(
+              '$names ${waking.length == 1 ? 'is' : 'are'} inactive. Activate '
+              '$it ${later ? 'when' : 'from when'} this event starts?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Leave inactive'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: const Text('Activate'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Leave inactive'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Activate'),
-            ),
-          ],
         ),
       );
       if (!mounted) return;

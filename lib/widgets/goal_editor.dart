@@ -422,8 +422,8 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
     final day = deadlineHasTime(_deadline)
         ? at
         : at.subtract(const Duration(days: 1));
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showTimeOfDayPicker(
+      context,
       initialTime: deadlineHasTime(_deadline)
           ? TimeOfDay.fromDateTime(at)
           : const TimeOfDay(hour: 17, minute: 0),

@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import '../models/circadian.dart';
 import '../services/circadian_repository.dart';
 import '../widgets/edit_page.dart';
+import '../widgets/day_picker.dart';
 import '../widgets/error_sheet.dart';
+import '../widgets/hotkeys.dart';
 
 /// Opens the [CircadianScreen] for [circadian], on a page of its own.
 Future<void> showCircadianRhythm(
@@ -140,8 +142,8 @@ class _CircadianScreenState extends State<CircadianScreen> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
+    final picked = await showDayPicker(
+      context,
       initialDate: _date,
       firstDate: DateTime(2000),
       lastDate: DateTime(_today.year + 1, _today.month, _today.day),
@@ -150,7 +152,7 @@ class _CircadianScreenState extends State<CircadianScreen> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(context: context, initialTime: _time);
+    final picked = await showTimeOfDayPicker(context, initialTime: _time);
     if (picked != null) setState(() => _time = picked);
   }
 

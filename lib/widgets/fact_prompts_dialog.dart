@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/trait.dart';
+import 'hotkeys.dart';
 
 /// Edits [whose] own prompts for [trait]'s [fact], in a dialog: for its
 /// summary prompt and its log prompt, whether to use the trait's, their
@@ -151,42 +152,40 @@ class _FactPromptsDialogState extends State<_FactPromptsDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AlertDialog(
-      title: Text('${widget.fact.name}: ${widget.whose} own prompts'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'How compaction keeps ${widget.whose} summary of it, in '
-              "place of ${widget.trait.name}'s or added to it. The summary is "
-              'rewritten to fit the next time an event is with or for '
-              '${widget.whose == 'your' ? 'you' : 'them'}.',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            _prompt(theme, 'What the summary keeps', _summary),
-            const SizedBox(height: 16),
-            _prompt(theme, "What's logged when it changes", _log),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(context).pop(
-            FactPromptOverride(
-              summaryPrompt: _summary.value,
-              logPrompt: _log.value,
-            ),
+    void done() => Navigator.of(context).pop(
+      FactPromptOverride(summaryPrompt: _summary.value, logPrompt: _log.value),
+    );
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: Text('${widget.fact.name}: ${widget.whose} own prompts'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'How compaction keeps ${widget.whose} summary of it, in '
+                "place of ${widget.trait.name}'s or added to it. The summary is "
+                'rewritten to fit the next time an event is with or for '
+                '${widget.whose == 'your' ? 'you' : 'them'}.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              _prompt(theme, 'What the summary keeps', _summary),
+              const SizedBox(height: 16),
+              _prompt(theme, "What's logged when it changes", _log),
+            ],
           ),
-          child: const Text('Done'),
         ),
-      ],
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: done, child: const Text('Done')),
+        ],
+      ),
     );
   }
 }

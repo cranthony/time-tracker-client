@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.254.0
+
+- On a goal's page, I opens "Deactivate until…", for the keyboard.
+- Ctrl+Enter presses the main button of more dialogs, even from a text
+  field: "Deactivate until" and "For how long", the time picker, a goal's
+  status note and its open sub-goals, "When is it due?", the fact dialogs,
+  "Make the goal now", the Google event sheet, an error sheet's "Try
+  again", and confirmations that are safe to take back. Those that delete
+  or discard something are still clicked.
+- The circadian page's date picker is the app's own, so J, K and Enter
+  work in it as they do elsewhere.
+
 ## 7.253.0
 
 - Deactivating a goal until after its deadline, or setting that in its

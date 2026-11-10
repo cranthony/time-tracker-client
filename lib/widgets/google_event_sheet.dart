@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/google_calendar.dart';
 import '../services/maps.dart';
 import 'event_description.dart';
+import 'hotkeys.dart';
 
 /// What to do with a Google Calendar event, from its sheet.
 enum GoogleEventChoice { log, open }
@@ -52,99 +53,107 @@ Future<GoogleEventChoice?> showGoogleEventSheet(
             ],
           ),
         );
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: event.color,
-                      borderRadius: BorderRadius.circular(4),
+    return SaveHotkey(
+      onSave: event.allDay
+          ? null
+          : () => Navigator.pop(context, GoogleEventChoice.log),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: event.color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        event.title,
+                        style: theme.textTheme.titleLarge,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                row(Icons.schedule, when),
+                if (event.location?.trim() case final where?
+                    when where.isNotEmpty)
+                  row(
+                    Icons.place_outlined,
+                    where,
+                    end: IconButton(
+                      icon: Icon(placeButton(where).icon),
+                      tooltip: placeButton(where).tooltip,
+                      visualDensity: VisualDensity.compact,
+                      color: theme.colorScheme.primary,
+                      onPressed: () => openInMaps(where),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(event.title, style: theme.textTheme.titleLarge),
+                if (event.description case final about?
+                    when about.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.notes,
+                          size: 20,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: EventDescription(about, selectable: true),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              row(Icons.schedule, when),
-              if (event.location?.trim() case final where?
-                  when where.isNotEmpty)
                 row(
-                  Icons.place_outlined,
-                  where,
-                  end: IconButton(
-                    icon: Icon(placeButton(where).icon),
-                    tooltip: placeButton(where).tooltip,
-                    visualDensity: VisualDensity.compact,
-                    color: theme.colorScheme.primary,
-                    onPressed: () => openInMaps(where),
+                  Icons.event_outlined,
+                  '${event.calendar.name} · ${event.calendar.account}',
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  event.allDay
+                      ? "From Google Calendar. It isn't one of your events."
+                      : "From Google Calendar. It isn't one of your events: "
+                            'logging it makes one with its times.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-              if (event.description case final about?
-                  when about.trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.notes,
-                        size: 20,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: EventDescription(about, selectable: true),
-                      ),
-                    ],
-                  ),
-                ),
-              row(
-                Icons.event_outlined,
-                '${event.calendar.name} · ${event.calendar.account}',
-              ),
-              const SizedBox(height: 4),
-              Text(
-                event.allDay
-                    ? "From Google Calendar. It isn't one of your events."
-                    : "From Google Calendar. It isn't one of your events: "
-                          'logging it makes one with its times.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton.icon(
-                    onPressed: () =>
-                        Navigator.pop(context, GoogleEventChoice.open),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Open in Calendar'),
-                  ),
-                  const SizedBox(width: 8),
-                  if (!event.allDay)
-                    FilledButton.icon(
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
                       onPressed: () =>
-                          Navigator.pop(context, GoogleEventChoice.log),
-                      icon: const Icon(Icons.add),
-                      label: const Text('Log this'),
+                          Navigator.pop(context, GoogleEventChoice.open),
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Open in Calendar'),
                     ),
-                ],
-              ),
-            ],
+                    const SizedBox(width: 8),
+                    if (!event.allDay)
+                      FilledButton.icon(
+                        onPressed: () =>
+                            Navigator.pop(context, GoogleEventChoice.log),
+                        icon: const Icon(Icons.add),
+                        label: const Text('Log this'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

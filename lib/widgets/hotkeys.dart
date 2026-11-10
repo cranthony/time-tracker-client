@@ -341,6 +341,11 @@ class Hotkey {
     'Mark it missed and try again, by a day picked',
     HotkeyPlace.goal,
   );
+  static const deactivateUntil = Hotkey(
+    'I',
+    'Deactivate it until something comes: a day, a while, another goal',
+    HotkeyPlace.goal,
+  );
 
   static const goalSections = Hotkey(
     'J / K',
@@ -474,6 +479,7 @@ class Hotkey {
     markDone,
     markMissed,
     retry,
+    deactivateUntil,
     goalSections,
     goalDeadline,
     goalStarts,
@@ -1666,6 +1672,49 @@ class SaveHotkey extends StatelessWidget {
     ],
     child: child,
   );
+}
+
+/// What the time picker's OK says, to find it by ([_TimePickerOkHotkey]).
+const _timePickerOk = 'OK';
+
+/// Asks for a time of day, [initialTime] to start with, as
+/// [showTimePicker] does -- with Ctrl+Enter pressing its OK, even from
+/// its text fields. The time picked, or null if it's called off.
+Future<TimeOfDay?> showTimeOfDayPicker(
+  BuildContext context, {
+  required TimeOfDay initialTime,
+}) => showTimePicker(
+  context: context,
+  initialTime: initialTime,
+  confirmText: _timePickerOk,
+  builder: (context, child) => _TimePickerOkHotkey(child: child!),
+);
+
+/// [child], Flutter's time picker: Ctrl+Enter presses its OK. By finding
+/// the button, as its handler's private, and that checks what's typed.
+class _TimePickerOkHotkey extends StatelessWidget {
+  const _TimePickerOkHotkey({required this.child});
+
+  final Widget child;
+
+  void _pressOk(BuildContext context) {
+    void visit(Element element) {
+      if (element.widget case ButtonStyleButton(
+        child: Text(data: _timePickerOk),
+        :final onPressed,
+      )) {
+        onPressed?.call();
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      SaveHotkey(onSave: () => _pressOk(context), child: child);
 }
 
 /// Puts [bindings] to work while this is in the tree: while the page or

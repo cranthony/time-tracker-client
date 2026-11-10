@@ -104,6 +104,11 @@ class _ConflictDialogState extends State<_ConflictDialog> {
     if (mounted) _close(true);
   }
 
+  Future<void> _restore() async {
+    await widget.queue.restore(_write);
+    if (mounted) _close(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final noun = widget.queue.noun(_write);
@@ -138,12 +143,12 @@ class _ConflictDialogState extends State<_ConflictDialog> {
             child: const Text('Drop my changes'),
           ),
           if (widget.queue.canRestore(_write))
-            FilledButton(
-              onPressed: () async {
-                await widget.queue.restore(_write);
-                if (mounted) _close(true);
-              },
-              child: const Text('Put it back'),
+            HotkeyHint(
+              Hotkey.save,
+              child: FilledButton(
+                onPressed: _restore,
+                child: const Text('Put it back'),
+              ),
             ),
         ],
       ),
@@ -165,9 +170,13 @@ class _ConflictDialogState extends State<_ConflictDialog> {
     return SaveOrDiscard(
       // Called off, it waits as it was: nothing's lost.
       changed: () => false,
-      onSave: _write.op == WriteOp.update && _write.current != null
-          ? _save
-          : null,
+      // Whichever button goes ahead, but not to delete it.
+      onSave: switch (_write) {
+        PendingWrite(op: WriteOp.delete) => null,
+        PendingWrite(current: null) =>
+          widget.queue.canRestore(_write) ? _restore : null,
+        _ => _save,
+      },
       onDiscard: () => _close(false),
       child: AlertDialog(
         title: Text(title),
