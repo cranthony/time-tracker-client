@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.258.0
+
+- The home screen goals widget's header matches the calendar's: its
+  "Goals" title is the same size, and its note and goal buttons are the
+  calendar's full-size ones, easier to hit. It's a little taller, so five
+  goals fit in two cells, where six did.
+
 ## 7.257.0
 
 - The home screen goals widget has a button for a new note, to the left

@@ -61,7 +61,7 @@ import java.util.Calendar
  *
  * Each widget's header -- "Goals", and the buttons -- is at its top, or,
  * set so in its settings (GoalsWidgetConfigureActivity), its bottom; and
- * its goals' text is small, as six rows fit, or, set there, 1.5 or 2
+ * its goals' text is small, as five rows fit, or, set there, 1.5 or 2
  * times that (TextSize), the rows growing with it; when each is due
  * grows half as much, to leave the title its room.
  */
@@ -179,11 +179,9 @@ private fun Content(
             .fillMaxSize()
             .appWidgetBackground()
             .background(GlanceTheme.colors.widgetBackground)
-            // No padding of its own: the header runs to the edge, for
-            // its button to sit in the corner (its target leaves 2dp
-            // round its circle); the goals and the header's title keep
-            // 12dp from the sides, and the rows have their own room
-            // above and below.
+            // No padding of its own: the header, the goals and the
+            // message keep 12dp from the sides each, and the rows have
+            // their own room above and below.
             .cornerRadius(16.dp),
     ) {
         if (!titleAtBottom) Header(context)
@@ -214,19 +212,16 @@ private fun Content(
 
 /**
  * "Goals", which opens the Plan page's Goals, then the buttons for a new
- * note and a new goal: above the goals, or below them. Thinner than the
- * calendar's: compact buttons, 28dp high, and a smaller title, to leave
- * the goals the room -- six rows in two cells (see [GoalRow]). The two
- * buttons are [BUTTON_GAP_DP] apart, a gap that takes no taps, so it's
- * plain which one a thumb is on.
+ * note and a new goal: above the goals, or below them. As the calendar's
+ * header is: the same size of title, and the same buttons, each a 32dp
+ * circle in its own 48dp tap target, side by side.
  */
 @Composable
 private fun Header(context: Context) {
     Row(
-        // No gap from the goals, and none from the widget's edge: the
-        // button's tap target leaves 2dp above and below its circle, and
-        // 6dp beside it, so the circle sits in the corner.
-        modifier = GlanceModifier.fillMaxWidth().padding(start = 12.dp),
+        // No gap from the goals: the buttons' tap targets leave 8dp
+        // round their circles. 12dp from the sides, as the calendar's.
+        modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -234,7 +229,7 @@ private fun Header(context: Context) {
             modifier = GlanceModifier.defaultWeight().clickable(open(context)),
             style = TextStyle(
                 color = GlanceTheme.colors.onSurface,
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Medium,
             ),
             maxLines = 1,
@@ -243,14 +238,11 @@ private fun Header(context: Context) {
             R.drawable.ic_add_note,
             context.getString(R.string.add_note_widget_label),
             AddNoteWidget.addNote(context),
-            compact = true,
         )
-        Spacer(modifier = GlanceModifier.width(BUTTON_GAP_DP.dp))
         HeaderButton(
             R.drawable.ic_add_goal,
             context.getString(R.string.add_goal_widget_label),
             AddGoalWidget.addGoal(context),
-            compact = true,
         )
     }
 }
@@ -308,14 +300,7 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float)
 }
 
 /**
- * The gap between the header's note and goal buttons' tap targets: with
- * the 6dp each target leaves beside its circle, the circles are 28dp
- * apart, more than one's width.
- */
-private const val BUTTON_GAP_DP = 16
-
-/**
- * A goal's row's height: six of them, under the 28dp header, in the
+ * A goal's row's height: five of them, under the 48dp header, in the
  * 150dp of two cells, with a few dp over for a launcher that gives less.
  */
 private const val ROW_DP = 19
