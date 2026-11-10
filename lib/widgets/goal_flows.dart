@@ -228,12 +228,15 @@ Future<Goal?> addGoalInSheet(
   return goalActions.add(
     parent: goalActions.tree[result.parentId],
     title: result.title,
-    deadline: result.deadline,
+    deadline: result.inactive ? null : result.deadline,
     description: result.description,
     descriptionFormat: result.descriptionFormat,
     priority: result.priority,
     withWhom: result.withWhom,
     forWhom: result.forWhom,
+    status: result.inactive ? 'inactive' : null,
+    activateWhen: result.activateWhen,
+    deadlineRule: result.deadlineRule,
   );
 }
 
@@ -419,6 +422,9 @@ class GoalActions {
     int? priority,
     List<Named> withWhom = const [],
     List<Named> forWhom = const [],
+    String? status,
+    Map<String, Object?>? activateWhen,
+    Map<String, Object?>? deadlineRule,
   }) async {
     final fields = await showGoalEditor(
       context,
@@ -431,6 +437,9 @@ class GoalActions {
       priority: priority,
       withWhom: withWhom,
       forWhom: forWhom,
+      status: status,
+      activateWhen: activateWhen,
+      deadlineRule: deadlineRule,
       now: now,
     );
     if (fields == null || !context.mounted) return null;

@@ -21,17 +21,23 @@ class GoalDraft {
     this.parentId,
     this.withWhom = const [],
     this.forWhom = const [],
+    this.inactive = false,
   });
 
   /// As typed, untrimmed.
   final String title;
 
-  /// The day it's due, at its end: midnight starting it, local.
+  /// The day it's due, at its end: midnight starting it, local -- or,
+  /// [inactive], the day it starts.
   final DateTime day;
 
-  /// The time on [day] it's due by, in minutes after its midnight; null
-  /// for its end.
+  /// The time on [day] it's due by (or, [inactive], starts at), in
+  /// minutes after its midnight; null for its end (or its start).
   final int? minuteOfDay;
+
+  /// Whether it's to be added inactive, starting on [day] and due by the
+  /// end of that day, rather than active and due on [day].
+  final bool inactive;
 
   /// As the goal's; null for none.
   final String? description;
@@ -65,6 +71,7 @@ class GoalDraft {
     parentId: json['parent_id'] as String?,
     withWhom: Named.listFromJson(json['with_ids']),
     forWhom: Named.listFromJson(json['for_ids']),
+    inactive: json['inactive'] == true,
   );
 
   Map<String, dynamic> toJson() => {
@@ -77,6 +84,7 @@ class GoalDraft {
     'parent_id': ?parentId,
     if (withWhom.isNotEmpty) 'with_ids': namedToJson(withWhom),
     if (forWhom.isNotEmpty) 'for_ids': namedToJson(forWhom),
+    if (inactive) 'inactive': true,
   };
 }
 

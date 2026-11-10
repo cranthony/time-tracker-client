@@ -483,10 +483,7 @@ class InMemoryEventsRepository implements EventsRepository {
   }) async {
     final i = _events.indexWhere((e) => e.id == event.id);
     if (i < 0) throw StateError('No event ${event.id}');
-    final updated = Event.fromJson({
-      ..._events[i].toJson(),
-      ...changes,
-    });
+    final updated = Event.fromJson({..._events[i].toJson(), ...changes});
     _events[i] = updated;
     return [updated];
   }

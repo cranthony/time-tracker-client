@@ -93,6 +93,12 @@ Future<GoalSheetResult?> showAddGoalSheet(
 
 var _newGoalSheets = 0;
 
+/// The deadline of a goal due by the end of the day it starts, as the
+/// server takes it.
+const sameDayDue = <String, Object?>{
+  'after_start': {'days': 0},
+};
+
 /// A goal added from a picker -- a New goal sheet's Under picker, for it
 /// to go under, say -- and every goal there is now.
 typedef GoalAdded = ({Goal added, List<Goal> goals});
@@ -120,9 +126,28 @@ final class MoreGoal extends GoalSheetResult {
     this.parentId,
     this.withWhom = const [],
     this.forWhom = const [],
+    this.inactive = false,
   });
   final String title;
+
+  /// The day it's due, or the day and time -- or, [inactive], when it
+  /// starts.
   final String deadline;
+
+  /// Whether it's added inactive, starting at [deadline] and due by the
+  /// end of that day.
+  final bool inactive;
+
+  /// As the server takes them, [inactive]: when it starts, and that it's
+  /// due by the end of that day; null, active.
+  Map<String, Object?>? get activateWhen => inactive
+      ? {
+          'after': [
+            {'at': deadline},
+          ],
+        }
+      : null;
+  Map<String, Object?>? get deadlineRule => inactive ? sameDayDue : null;
   final String? description;
   final TextFormat? descriptionFormat;
 
@@ -186,7 +211,7 @@ class _GoalSheetState extends State<_GoalSheet> {
 
   /// Whether it's added inactive, to start on [_day] -- due the day it
   /// starts -- rather than active, due on [_day].
-  bool _inactive = false;
+  late bool _inactive = widget.drafts?.draft?.inactive ?? false;
 
   /// The first day [_day] can be: today to be due, tomorrow to start.
   DateTime get _first => _inactive ? _tomorrow : _today;
@@ -206,10 +231,11 @@ class _GoalSheetState extends State<_GoalSheet> {
     text: widget.drafts?.draft?.title ?? widget.title,
   );
 
-  /// The day it's due; not before today, even for a draft from days ago.
+  /// The day it's due, or starts; not before today (or tomorrow, to
+  /// start), even for a draft from days ago.
   late DateTime _day = switch (widget.drafts?.draft?.day ?? widget.day) {
-    final day? when !day.isBefore(_today) => _dayOf(day),
-    _ => _today,
+    final day? when !day.isBefore(_first) => _dayOf(day),
+    _ => _first,
   };
 
   /// The time on [_day] it's due by; null for its end.
@@ -332,6 +358,7 @@ class _GoalSheetState extends State<_GoalSheet> {
           parentId: _parentId,
           withWhom: [..._with],
           forWhom: [..._for],
+          inactive: _inactive,
         ),
       );
     }
@@ -581,10 +608,7 @@ class _GoalSheetState extends State<_GoalSheet> {
     'title': _title.text.trim(),
     if (_inactive) ...{
       'status': 'inactive',
-      // Due by the end of the day it starts.
-      'deadline': {
-        'after_start': {'days': 0},
-      },
+      'deadline': sameDayDue,
       'activate_when': {
         'after': [
           {'at': _deadline},
@@ -648,6 +672,7 @@ class _GoalSheetState extends State<_GoalSheet> {
       parentId: _parentId,
       withWhom: [..._with],
       forWhom: [..._for],
+      inactive: _inactive,
     ),
   );
 
@@ -871,9 +896,10 @@ class _GoalSheetState extends State<_GoalSheet> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    // The day and its steppers, kept together on a line.
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
+                    // The day and its steppers, kept together on a line,
+                    // wrapping only where they alone are too wide for one.
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         IconButton(
                           icon: const Icon(Icons.remove),
@@ -947,7 +973,7 @@ class _GoalSheetState extends State<_GoalSheet> {
                             Padding(
                               padding: const EdgeInsets.only(left: 4),
                               child: Text(
-                                'Inactive till then, and due by the end of '
+                                'Inactive until then, and due by the end of '
                                 'that day',
                                 style: theme.textTheme.bodySmall?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
