@@ -55,7 +55,10 @@ Future<List<Event>?> showEventDialog(
     kinds: _kinds,
     // Every event has one; the rest can be cleared (see clearableFields).
     required: const {'summary'},
-    hints: const {'start': timesHint, 'end': timesHint},
+    hints: const {
+      'start': timesHint,
+      'end': timesHint,
+    },
     links: {
       if ((openSeries, event.properties['recurring_event_id']) case (
         final open?,

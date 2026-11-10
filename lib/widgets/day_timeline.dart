@@ -962,13 +962,15 @@ class DayTimeline extends StatelessWidget {
                                   ? null
                                   : () => onLongPress!(placement.event),
                               faded:
-                                  faded != null && placement.event.id == faded,
+                                  faded != null &&
+                                  placement.event.id == faded,
                               mark: marks[placement.event.id],
                               timeLabel: (t) =>
-                                  MaterialLocalizations.of(context)
-                                      .formatTimeOfDay(
-                                        TimeOfDay.fromDateTime(t.toLocal()),
-                                      ),
+                                  MaterialLocalizations.of(
+                                    context,
+                                  ).formatTimeOfDay(
+                                    TimeOfDay.fromDateTime(t.toLocal()),
+                                  ),
                             ),
                           ),
                         if (googleOnTop)
