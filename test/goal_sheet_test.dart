@@ -722,9 +722,144 @@ void main() {
   });
 
   testWidgets('on a wide screen, it is all one line', (tester) async {
+    // The test font is far wider than any real one: scaled down to
+    // about a real one's width, as the sheet's no wider than 640.
+    tester.platformDispatcher.textScaleFactorTestValue = 0.5;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await open(tester);
     final add = tester.getCenter(find.text('Add')).dy;
     expect(tester.getCenter(find.text('Today')).dy, closeTo(add, 4));
     expect(tester.takeException(), isNull);
+  });
+
+  group('inactive, with Starts', () {
+    Future<void> starts(WidgetTester tester) async {
+      await tester.tap(find.text('Starts'));
+      await tester.pump();
+    }
+
+    testWidgets('starts tomorrow, not before; Tomorrow goes back', (
+      tester,
+    ) async {
+      await open(tester);
+      await starts(tester);
+      expect(find.text('Mon, Oct 19'), findsOneWidget);
+      expect(
+        find.text('Inactive until then, and due by the end of that day'),
+        findsOneWidget,
+      );
+      final earlier = find.widgetWithIcon(IconButton, Icons.remove);
+      expect(tester.widget<IconButton>(earlier).onPressed, isNull);
+
+      await tester.tap(find.byTooltip('A day later'));
+      await tester.tap(find.byTooltip('A day later'));
+      await tester.pump();
+      expect(find.text('Wed, Oct 21'), findsOneWidget);
+      await tester.tap(find.text('Tomorrow'));
+      await tester.pump();
+      expect(find.text('Mon, Oct 19'), findsOneWidget);
+    });
+
+    testWidgets('Due goes back to active, due today', (tester) async {
+      await open(tester);
+      await starts(tester);
+      await tester.tap(find.text('Due'));
+      await tester.pump();
+      expect(find.text('Sun, Oct 18'), findsOneWidget);
+      expect(find.text('Today'), findsOneWidget);
+      expect(find.textContaining('Inactive until then'), findsNothing);
+    });
+
+    testWidgets('Add keeps it inactive, starting then and due that day', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.enterText(find.byType(TextField), 'Book the dentist');
+      await starts(tester);
+      await tester.tap(find.byTooltip('A day later'));
+      await tester.pump();
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+
+      expect(kept, hasLength(1));
+      final fields = kept.single;
+      expect(fields['status'], 'inactive');
+      expect(fields['deadline'], {
+        'after_start': {'days': 0},
+      });
+      expect(fields['activate_when'], {
+        'after': [
+          {'at': '2026-10-20'},
+        ],
+      });
+      expect(drafts.draft, isNull);
+    });
+
+    testWidgets('its draft keeps it inactive, and carries on so', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.enterText(find.byType(TextField), 'Book the dentist');
+      await starts(tester);
+      expect(drafts.draft?.inactive, isTrue);
+      expect(drafts.draft?.day, DateTime(2026, 10, 19));
+
+      final draft = drafts.draft!;
+      expect(GoalDraft.fromJson(draft.toJson()).inactive, isTrue);
+      expect(
+        GoalDraft(title: 'x', day: now).toJson().containsKey('inactive'),
+        isFalse,
+      );
+
+      Navigator.of(tester.element(find.text('New goal'))).pop();
+      await tester.pumpAndSettle();
+      await open(tester, withDrafts: drafts);
+      expect(find.text('Mon, Oct 19'), findsOneWidget);
+      expect(find.text('Tomorrow'), findsOneWidget);
+    });
+
+    testWidgets("an inactive draft from days ago starts tomorrow", (
+      tester,
+    ) async {
+      final old = GoalDrafts.inMemory();
+      await old.put(
+        GoalDraft(title: 'Old', day: DateTime(2026, 10, 1), inactive: true),
+      );
+      await open(tester, withDrafts: old);
+      expect(find.text('Mon, Oct 19'), findsOneWidget);
+    });
+
+    testWidgets('More gives it inactive, as the full page takes it', (
+      tester,
+    ) async {
+      await open(tester);
+      await tester.enterText(find.byType(TextField), 'Book the dentist');
+      await starts(tester);
+      await tester.tap(find.text('More'));
+      await tester.pumpAndSettle();
+
+      final more = result as MoreGoal;
+      expect(more.inactive, isTrue);
+      expect(more.deadline, '2026-10-19');
+      expect(more.activateWhen, {
+        'after': [
+          {'at': '2026-10-19'},
+        ],
+      });
+      expect(more.deadlineRule, {
+        'after_start': {'days': 0},
+      });
+    });
+
+    testWidgets('More, active, gives no start', (tester) async {
+      await open(tester);
+      await tester.enterText(find.byType(TextField), 'Ship it');
+      await tester.tap(find.text('More'));
+      await tester.pumpAndSettle();
+      final more = result as MoreGoal;
+      expect(more.inactive, isFalse);
+      expect(more.activateWhen, isNull);
+      expect(more.deadlineRule, isNull);
+    });
   });
 }

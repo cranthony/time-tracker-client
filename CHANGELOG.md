@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.255.0
+
+- The quick New goal sheet adds inactive goals: its Due / Starts toggle
+  (I, for the keyboard) switches between an active goal due on the day,
+  today to begin with, and an inactive one that starts on the day,
+  tomorrow to begin with, and is due by the end of that day. Its draft
+  keeps which it is, and More carries it on to the full New goal page.
+
 ## 7.254.0
 
 - On a goal's page, I opens "Deactivate until…", for the keyboard.
