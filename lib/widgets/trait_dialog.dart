@@ -363,68 +363,73 @@ class _FactDialogState extends State<_FactDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.fact == null ? 'New fact' : 'Edit ${widget.fact!.name}'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _name,
-            autofocus: widget.fact == null,
-            maxLength: 50,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Name',
-              hintText: 'e.g. What matters',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _summary,
-            minLines: 3,
-            maxLines: null,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'What its summary keeps',
-              hintText:
-                  "What's important to them: the people, interests and "
-                  'plans they care about. A list, kept current.',
-              helperText: 'What Claude is told, to keep each summary.',
-              helperMaxLines: 2,
-              border: OutlineInputBorder(),
-              floatingLabelBehavior: FloatingLabelBehavior.always,
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _log,
-            minLines: 2,
-            maxLines: null,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: "What's logged when it changes (optional)",
-              hintText: 'What changed, and what in the event showed it.',
-              border: OutlineInputBorder(),
-              floatingLabelBehavior: FloatingLabelBehavior.always,
-            ),
-          ),
-        ],
+  Widget build(BuildContext context) => SaveHotkey(
+    onSave: _ready ? _done : null,
+    child: AlertDialog(
+      title: Text(
+        widget.fact == null ? 'New fact' : 'Edit ${widget.fact!.name}',
       ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _name,
+              autofocus: widget.fact == null,
+              maxLength: 50,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Name',
+                hintText: 'e.g. What matters',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _summary,
+              minLines: 3,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'What its summary keeps',
+                hintText:
+                    "What's important to them: the people, interests and "
+                    'plans they care about. A list, kept current.',
+                helperText: 'What Claude is told, to keep each summary.',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _log,
+              minLines: 2,
+              maxLines: null,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: "What's logged when it changes (optional)",
+                hintText: 'What changed, and what in the event showed it.',
+                border: OutlineInputBorder(),
+                floatingLabelBehavior: FloatingLabelBehavior.always,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _ready ? _done : null,
+          child: Text(widget.fact == null ? 'Add' : 'Done'),
+        ),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _ready ? _done : null,
-        child: Text(widget.fact == null ? 'Add' : 'Done'),
-      ),
-    ],
   );
 }

@@ -1127,8 +1127,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
 
   Future<void> _pickTime() async {
     final current = _draft as DateTime;
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showTimeOfDayPicker(
+      context,
       initialTime: TimeOfDay.fromDateTime(current),
     );
     if (picked == null) return;

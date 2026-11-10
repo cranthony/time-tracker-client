@@ -7,6 +7,7 @@ import 'duration_field.dart';
 import 'durations.dart';
 import 'goal_fields.dart' show deadlineAt;
 import 'goal_icon.dart';
+import 'hotkeys.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
 
@@ -515,42 +516,41 @@ class _WhileDialogState extends State<_WhileDialog> {
   @override
   Widget build(BuildContext context) {
     final until = _until;
-    return AlertDialog(
-      title: const Text('For how long'),
-      content: SizedBox(
-        width: 360,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            DurationField(
-              controller: _minutes,
-              label: 'For',
-              units: DurationUnits.daysHours,
-              onChanged: () => setState(() {}),
-            ),
-            if (until != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(
-                  'Until ${startLabel(context, deadlineOf(until, time: true))}',
-                ),
+    final done = until == null ? null : () => Navigator.of(context).pop(until);
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: const Text('For how long'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              DurationField(
+                controller: _minutes,
+                label: 'For',
+                units: DurationUnits.daysHours,
+                onChanged: () => setState(() {}),
               ),
-          ],
+              if (until != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    'Until ${startLabel(context, deadlineOf(until, time: true))}',
+                  ),
+                ),
+            ],
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: done, child: const Text('OK')),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: until == null
-              ? null
-              : () => Navigator.of(context).pop(until),
-          child: const Text('OK'),
-        ),
-      ],
     );
   }
 }
@@ -589,32 +589,35 @@ class _DeactivateUntilDialogState extends State<_DeactivateUntilDialog> {
   Map<String, Object?>? _value;
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text('Deactivate ${goalTitle(widget.goal)} until'),
-    content: SizedBox(
-      width: 480,
-      child: SingleChildScrollView(
-        child: GoalStartsEditor(
-          value: _value,
-          goals: widget.goals,
-          goalId: widget.goal.id,
-          parentId: widget.goal.parentId,
-          now: widget.now,
-          onChanged: (value) => setState(() => _value = value),
+  Widget build(BuildContext context) {
+    final done = _value == null
+        ? null
+        : () => Navigator.of(context).pop(_value);
+    return SaveHotkey(
+      onSave: done,
+      child: AlertDialog(
+        title: Text('Deactivate ${goalTitle(widget.goal)} until'),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: GoalStartsEditor(
+              value: _value,
+              goals: widget.goals,
+              goalId: widget.goal.id,
+              parentId: widget.goal.parentId,
+              now: widget.now,
+              onChanged: (value) => setState(() => _value = value),
+            ),
+          ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(onPressed: done, child: const Text('Deactivate')),
+        ],
       ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Cancel'),
-      ),
-      FilledButton(
-        onPressed: _value == null
-            ? null
-            : () => Navigator.of(context).pop(_value),
-        child: const Text('Deactivate'),
-      ),
-    ],
-  );
+    );
+  }
 }

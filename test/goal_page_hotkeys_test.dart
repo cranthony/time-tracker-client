@@ -266,6 +266,110 @@ void main() {
     expect(status(tester), 'Active');
   });
 
+  Future<void> ctrlEnter(WidgetTester tester) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets("I on a goal's page asks until what to deactivate it, and "
+      'Ctrl+Enter deactivates it once something is picked', (tester) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyI);
+    expect(find.text('Deactivate Write the pane until'), findsOneWidget);
+
+    // Nothing picked, its button can't be pressed: nor can Ctrl+Enter.
+    await ctrlEnter(tester);
+    expect(find.text('Deactivate Write the pane until'), findsOneWidget);
+
+    await tester.tap(find.text('From a day…'));
+    await tester.pumpAndSettle();
+    await ctrlEnter(tester);
+    expect(find.text('Deactivate Write the pane until'), findsOneWidget);
+    expect(status(tester), 'Active');
+
+    await ctrlEnter(tester);
+    expect(find.text('Deactivate Write the pane until'), findsNothing);
+    expect(status(tester), 'Inactive');
+
+    // Inactive, it can't be deactivated again.
+    await press(tester, LogicalKeyboardKey.keyI);
+    expect(find.text('Deactivate Write the pane until'), findsNothing);
+  });
+
+  testWidgets('Ctrl+Enter takes the while typed in For how long', (
+    tester,
+  ) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyI);
+    await tester.tap(find.text('For a while…'));
+    await tester.pumpAndSettle();
+    final field = find.descendant(
+      of: find.byType(DurationField),
+      matching: find.byType(TextField),
+    );
+    // None at all isn't a while: it stays open.
+    await tester.enterText(field, '0');
+    await tester.pump();
+    await ctrlEnter(tester);
+    expect(find.text('For how long'), findsOneWidget);
+
+    await tester.enterText(field, '1d 3h');
+    await tester.pump();
+    await ctrlEnter(tester);
+    expect(find.text('For how long'), findsNothing);
+    expect(find.textContaining(RegExp(r'^From .*\d:\d\d')), findsOneWidget);
+  });
+
+  testWidgets('Ctrl+Enter marks it done from the note dialog, and only it', (
+    tester,
+  ) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(find.text('Mark Write the pane done'), findsOneWidget);
+    await ctrlEnter(tester);
+    expect(find.text('Mark Write the pane done'), findsNothing);
+    expect(status(tester), 'Done');
+    // Still on its page.
+    expect(find.text('Write the pane'), findsWidgets);
+  });
+
+  testWidgets('Ctrl+Enter marks it done from the dialog for its open '
+      'sub-goals', (tester) async {
+    await pumpGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyD);
+    expect(
+      find.text("What becomes of what's still open under it?"),
+      findsOneWidget,
+    );
+    await ctrlEnter(tester);
+    expect(
+      find.text("What becomes of what's still open under it?"),
+      findsNothing,
+    );
+    expect(status(tester), 'Done');
+  });
+
+  testWidgets("Ctrl+Enter presses the time picker's OK, then the day "
+      "picker's under it", (tester) async {
+    await pumpSubGoal(tester);
+    await press(tester, LogicalKeyboardKey.keyI);
+    await tester.tap(find.text('From a day…'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add a time'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TimePickerDialog), findsOneWidget);
+
+    await ctrlEnter(tester);
+    expect(find.byType(TimePickerDialog), findsNothing);
+    expect(find.text('Starts from'), findsOneWidget);
+
+    await ctrlEnter(tester);
+    expect(find.text('Starts from'), findsNothing);
+    expect(find.textContaining(RegExp(r'^From .*, 9:00 AM$')), findsOneWidget);
+  });
+
   testWidgets("E on a goal's page edits it", (tester) async {
     await pumpGoal(tester);
     await press(tester, LogicalKeyboardKey.keyE);

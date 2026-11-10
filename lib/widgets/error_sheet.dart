@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/server_errors.dart';
+import 'hotkeys.dart';
 
 /// Says that [title] -- "Couldn't move it" -- and why, from [error] (or
 /// [message], saying it better; or [failure], already described), in a
@@ -106,48 +107,51 @@ class ErrorSheet extends StatelessWidget {
       FailureKind.timeout || FailureKind.server => Icons.hourglass_empty,
       FailureKind.refused || FailureKind.other => Icons.error_outline,
     };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: theme.colorScheme.error),
-              const SizedBox(width: 12),
-              Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(failure.message),
-          if (failure.transient) ...[
-            const SizedBox(height: 8),
-            Text(
-              'This is usually brief.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.hintColor,
+    return SaveHotkey(
+      onSave: canRetry ? () => Navigator.of(context).pop(true) : null,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: theme.colorScheme.error),
+                const SizedBox(width: 12),
+                Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(failure.message),
+            if (failure.transient) ...[
+              const SizedBox(height: 8),
+              Text(
+                'This is usually brief.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.hintColor,
+                ),
               ),
+            ],
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Close'),
+                ),
+                if (canRetry) ...[
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Try again'),
+                  ),
+                ],
+              ],
             ),
           ],
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Close'),
-              ),
-              if (canRetry) ...[
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Try again'),
-                ),
-              ],
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

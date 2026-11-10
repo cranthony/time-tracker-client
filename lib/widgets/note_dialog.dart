@@ -232,8 +232,8 @@ class _NoteDialogState extends State<_NoteDialog> {
   }
 
   Future<void> _pickTime() async {
-    final picked = await showTimePicker(
-      context: context,
+    final picked = await showTimeOfDayPicker(
+      context,
       initialTime: TimeOfDay.fromDateTime(_time),
     );
     if (picked == null) return;

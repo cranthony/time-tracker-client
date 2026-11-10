@@ -642,8 +642,8 @@ class _PartsEditorState extends State<PartsEditor> {
               : '$label ${scheduleTime(minutes)}',
         ),
         onPressed: () async {
-          final picked = await showTimePicker(
-            context: context,
+          final picked = await showTimeOfDayPicker(
+            context,
             initialTime: minutes == null
                 ? const TimeOfDay(hour: 9, minute: 0)
                 : TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60),
