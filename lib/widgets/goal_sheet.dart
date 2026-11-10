@@ -182,6 +182,25 @@ class _GoalSheet extends StatefulWidget {
 
 class _GoalSheetState extends State<_GoalSheet> {
   late final _today = _dayOf(widget.now());
+  late final _tomorrow = DateTime(_today.year, _today.month, _today.day + 1);
+
+  /// Whether it's added inactive, to start on [_day] -- due the day it
+  /// starts -- rather than active, due on [_day].
+  bool _inactive = false;
+
+  /// The first day [_day] can be: today to be due, tomorrow to start.
+  DateTime get _first => _inactive ? _tomorrow : _today;
+
+  /// Switches between active, due today, and inactive, starting tomorrow.
+  void _setInactive(bool inactive) {
+    if (inactive == _inactive) return;
+    setState(() {
+      _inactive = inactive;
+      _day = inactive ? _tomorrow : _today;
+      _time = null;
+    });
+    _keepDraft();
+  }
 
   late final _title = TextEditingController(
     text: widget.drafts?.draft?.title ?? widget.title,
@@ -325,7 +344,7 @@ class _GoalSheetState extends State<_GoalSheet> {
 
   void _shift(int days) {
     final next = DateTime(_day.year, _day.month, _day.day + days);
-    if (next.isBefore(_today)) return;
+    if (next.isBefore(_first)) return;
     _setDay(next);
   }
 
@@ -335,7 +354,7 @@ class _GoalSheetState extends State<_GoalSheet> {
       context,
       initialDate: _day,
       initialTime: _time,
-      firstDate: _today,
+      firstDate: _first,
       lastDate: DateTime(_today.year + 20),
     );
     if (picked == null || !mounted) return;
@@ -560,8 +579,21 @@ class _GoalSheetState extends State<_GoalSheet> {
   /// The new goal's fields, keyed as the server takes them.
   Map<String, Object?> get _fields => {
     'title': _title.text.trim(),
-    'deadline': _deadline,
-    'status': 'active',
+    if (_inactive) ...{
+      'status': 'inactive',
+      // Due by the end of the day it starts.
+      'deadline': {
+        'after_start': {'days': 0},
+      },
+      'activate_when': {
+        'after': [
+          {'at': _deadline},
+        ],
+      },
+    } else ...{
+      'deadline': _deadline,
+      'status': 'active',
+    },
     'parent_id': ?_parentId,
     'description': ?_description,
     if (_description != null) 'description_format': ?_descriptionFormat?.wire,
@@ -813,36 +845,74 @@ class _GoalSheetState extends State<_GoalSheet> {
                 final date = Wrap(
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove),
-                      tooltip: 'A day earlier',
-                      visualDensity: _dense,
-                      onPressed: _day.isAfter(_today) ? () => _shift(-1) : null,
-                    ),
                     FieldHotkey(
-                      'D',
-                      child: ActionChip(
-                        avatar: const Icon(Icons.event),
-                        label: Text(day),
-                        tooltip: _time == null
-                            ? 'Due by the end of the day'
-                            : 'Due by then',
-                        onPressed: _pickDay,
+                      'I',
+                      child: SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(visualDensity: _dense),
+                        segments: const [
+                          ButtonSegment(
+                            value: false,
+                            icon: Icon(Icons.flag_outlined),
+                            label: Text('Due'),
+                            tooltip: 'Active, due on the day',
+                          ),
+                          ButtonSegment(
+                            value: true,
+                            icon: Icon(Icons.schedule),
+                            label: Text('Starts'),
+                            tooltip: 'Inactive till the day, then due that day',
+                          ),
+                        ],
+                        selected: {_inactive},
+                        onSelectionChanged: _keeping
+                            ? null
+                            : (picked) => _setInactive(picked.single),
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.add),
-                      tooltip: 'A day later',
-                      visualDensity: _dense,
-                      onPressed: () => _shift(1),
-                    ),
-                    FieldHotkey(
-                      'O',
-                      child: TextButton(
-                        style: TextButton.styleFrom(visualDensity: _dense),
-                        onPressed: () => _setDay(_today),
-                        child: const Text('Today'),
-                      ),
+                    const SizedBox(width: 4),
+                    // The day and its steppers, kept together on a line.
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove),
+                          tooltip: 'A day earlier',
+                          visualDensity: _dense,
+                          onPressed: _day.isAfter(_first)
+                              ? () => _shift(-1)
+                              : null,
+                        ),
+                        FieldHotkey(
+                          'D',
+                          child: ActionChip(
+                            avatar: const Icon(Icons.event),
+                            label: Text(day),
+                            tooltip: _inactive
+                                ? (_time == null
+                                      ? 'Starts that day, due by its end'
+                                      : 'Starts then, due by the end of the day')
+                                : _time == null
+                                ? 'Due by the end of the day'
+                                : 'Due by then',
+                            onPressed: _pickDay,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          tooltip: 'A day later',
+                          visualDensity: _dense,
+                          onPressed: () => _shift(1),
+                        ),
+                        FieldHotkey(
+                          'O',
+                          child: TextButton(
+                            style: TextButton.styleFrom(visualDensity: _dense),
+                            onPressed: () => _setDay(_first),
+                            child: Text(_inactive ? 'Tomorrow' : 'Today'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 );
@@ -866,7 +936,28 @@ class _GoalSheetState extends State<_GoalSheet> {
                     ),
                   ],
                 );
-                return _LineOrTwo(start: date, end: buttons);
+                return _LineOrTwo(
+                  start: !_inactive
+                      ? date
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            date,
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: Text(
+                                'Inactive till then, and due by the end of '
+                                'that day',
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                  end: buttons,
+                );
               },
             ),
           ],
