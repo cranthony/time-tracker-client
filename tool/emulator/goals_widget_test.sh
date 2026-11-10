@@ -11,8 +11,9 @@
 #
 # The cases, in order:
 #
-#   shown      added from the app's menu, it shows the header, "Goals" and
-#              the goal button, and the sample data's active goals, the
+#   shown      added from the app's menu, it shows the header, "Goals",
+#              the note button and the goal button, the note button
+#              left of the goal button with a gap between, and the sample data's active goals, the
 #              soonest due first: those due today -- "Sign up for the
 #              race" (12:30), "Show the goals due above the timeline"
 #              (5:00 PM), then "Draw the goal icon" (by the day's end) --
@@ -22,6 +23,7 @@
 #              the Goals pane", which is done, nor the inactive ones
 #   goal_cold  a goal tapped, the app's process gone: its page
 #   goals_warm "Goals" tapped, the app in the background: Plan, on Goals
+#   add_note   its note button tapped: the New note sheet
 #   add_goal   its goal button tapped: the New goal sheet
 #   title_bottom its settings opened, as the launcher does, and "Title at
 #              the bottom" picked: its "Goals" header below its goals
@@ -177,6 +179,20 @@ else
     missing+=(Goals)
   grep -qE '(text|content-desc)="Add goal"' "$OUT/goals_shown.txt" ||
     missing+=('the goal button')
+  grep -qE '(text|content-desc)="Add note"' "$OUT/goals_shown.txt" ||
+    missing+=('the note button')
+  # The note button's tap target ends before the goal button's
+  # starts, a gap between them, on the same line.
+  bounds_of() {
+    grep "$WIDGET" "$OUT/goals_shown.txt" | grep -E "content-desc=\"$1\"" | head -1 |
+      sed -n 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/p'
+  }
+  read -r note_l note_t note_r _ <<<"$(bounds_of 'Add note')"
+  read -r goal_l goal_t _ _ <<<"$(bounds_of 'Add goal')"
+  if [ -z "${note_r:-}" ] || [ -z "${goal_l:-}" ] ||
+    [ "$note_t" != "$goal_t" ] || [ $((goal_l - note_r)) -le 0 ]; then
+    missing+=("a gap between the note and goal buttons (note ${note_l:-?}-${note_r:-?}, goal from ${goal_l:-?})")
+  fi
   grep -qE 'text="Today' "$OUT/goals_shown.txt" ||
     missing+=('"Today"')
   [ "$goals" = yes ] ||
@@ -262,6 +278,21 @@ if widget_home && tap_view Goals "$WIDGET" && poll 20 goals_pane_opened; then
 else
   fail goals_warm "tapping \"Goals\" didn't open Plan on Goals"
 fi
+
+# Its note button, then the sheet closed again -- the keyboard first,
+# if it's up -- for the goal button's to open on its own.
+if widget_home && tap_view 'Add note' "$WIDGET" &&
+  wait_for 'New note' 20; then
+  adb exec-out screencap -p > "$OUT/goals_add_note.png"
+  pass add_note
+else
+  fail add_note "the note button didn't open the New note sheet"
+fi
+for _ in 1 2 3; do
+  on_screen 'New note' || break
+  adb shell input keyevent KEYCODE_BACK
+  sleep 1
+done
 
 # Its goal button.
 if widget_home && tap_view 'Add goal' "$WIDGET" &&

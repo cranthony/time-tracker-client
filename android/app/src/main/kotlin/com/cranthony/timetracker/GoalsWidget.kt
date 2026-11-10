@@ -55,10 +55,11 @@ import java.util.Calendar
  * midnight, so the days' names keep up.
  *
  * Tapping a goal opens the app on its page, and "Goals" on the Plan
- * page's Goals (see MainActivity); the goal button opens the New goal
- * sheet, as AddGoalWidget does.
+ * page's Goals (see MainActivity); the note button opens the New note
+ * sheet, as AddNoteWidget does, and the goal button the New goal sheet,
+ * as AddGoalWidget does.
  *
- * Each widget's header -- "Goals", and the button -- is at its top, or,
+ * Each widget's header -- "Goals", and the buttons -- is at its top, or,
  * set so in its settings (GoalsWidgetConfigureActivity), its bottom; and
  * its goals' text is small, as six rows fit, or, set there, 1.5 or 2
  * times that (TextSize), the rows growing with it; when each is due
@@ -212,10 +213,12 @@ private fun Content(
 }
 
 /**
- * "Goals", which opens the Plan page's Goals, then the button for a new
- * goal: above the goals, or below them. Thinner than the calendar's: a
- * compact button, 28dp high, and a smaller title, to leave the goals
- * the room -- six rows in two cells (see [GoalRow]).
+ * "Goals", which opens the Plan page's Goals, then the buttons for a new
+ * note and a new goal: above the goals, or below them. Thinner than the
+ * calendar's: compact buttons, 28dp high, and a smaller title, to leave
+ * the goals the room -- six rows in two cells (see [GoalRow]). The two
+ * buttons are [BUTTON_GAP_DP] apart, a gap that takes no taps, so it's
+ * plain which one a thumb is on.
  */
 @Composable
 private fun Header(context: Context) {
@@ -236,6 +239,13 @@ private fun Header(context: Context) {
             ),
             maxLines = 1,
         )
+        HeaderButton(
+            R.drawable.ic_add_note,
+            context.getString(R.string.add_note_widget_label),
+            AddNoteWidget.addNote(context),
+            compact = true,
+        )
+        Spacer(modifier = GlanceModifier.width(BUTTON_GAP_DP.dp))
         HeaderButton(
             R.drawable.ic_add_goal,
             context.getString(R.string.add_goal_widget_label),
@@ -296,6 +306,13 @@ private fun GoalRow(context: Context, goal: WidgetGoal, now: Long, scale: Float)
         }
     }
 }
+
+/**
+ * The gap between the header's note and goal buttons' tap targets: with
+ * the 6dp each target leaves beside its circle, the circles are 28dp
+ * apart, more than one's width.
+ */
+private const val BUTTON_GAP_DP = 16
 
 /**
  * A goal's row's height: six of them, under the 28dp header, in the

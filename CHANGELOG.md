@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.257.0
+
+- The home screen goals widget has a button for a new note, to the left
+  of its button for a new goal, with a gap between them that doesn't
+  take taps, so it's plain which one you're pressing.
+
 ## 7.256.0
 
 - The app opens on Events, instead of Notes.
