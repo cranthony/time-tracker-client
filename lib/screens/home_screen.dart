@@ -118,7 +118,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  var _tab = _Tab.notes;
+  /// The page showing: Events, to begin with.
+  var _tab = _Tab.events;
 
   /// Kept across pages, so a draft outlasts the Notes page.
   late final NoteDrafts _noteDrafts =

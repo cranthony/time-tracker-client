@@ -65,14 +65,14 @@ void main() {
   testWidgets('Ctrl+B, then a letter, goes to that page', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    expect(find.byType(NotesScreen), findsOneWidget);
-
-    await afterCtrlB(tester, LogicalKeyboardKey.keyE);
     expect(find.byType(EventsScreen), findsOneWidget);
-    await afterCtrlB(tester, LogicalKeyboardKey.keyP);
-    expect(find.byType(PlanScreen), findsOneWidget);
+
     await afterCtrlB(tester, LogicalKeyboardKey.keyN);
     expect(find.byType(NotesScreen), findsOneWidget);
+    await afterCtrlB(tester, LogicalKeyboardKey.keyP);
+    expect(find.byType(PlanScreen), findsOneWidget);
+    await afterCtrlB(tester, LogicalKeyboardKey.keyE);
+    expect(find.byType(EventsScreen), findsOneWidget);
   });
 
   testWidgets('Ctrl+B, then the letter with Ctrl still held, does nothing', (
@@ -82,10 +82,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
-    await tester.sendKeyEvent(LogicalKeyboardKey.keyE);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyN);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
-    expect(find.byType(NotesScreen), findsOneWidget);
+    expect(find.byType(EventsScreen), findsOneWidget);
     expect(hotkeys.afterCtrlB, isFalse);
   });
 
@@ -101,7 +101,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.textContaining('let go of Ctrl'), findsNothing);
-    expect(find.byType(NotesScreen), findsOneWidget);
+    expect(find.byType(EventsScreen), findsOneWidget);
   });
 
   testWidgets('Ctrl+B, then a letter, shakes instead while a dialog is open', (
@@ -109,17 +109,17 @@ void main() {
   ) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
-    final context = tester.element(find.byType(NotesScreen));
+    final context = tester.element(find.byType(EventsScreen));
     showDialog<void>(
       context: context,
       builder: (_) => const AlertDialog(title: Text('Unsaved')),
     );
     await tester.pumpAndSettle();
 
-    await afterCtrlB(tester, LogicalKeyboardKey.keyE);
+    await afterCtrlB(tester, LogicalKeyboardKey.keyN);
     expect(hotkeys.shakes.value, 1);
     expect(find.text('Unsaved'), findsOneWidget);
-    expect(find.byType(NotesScreen), findsOneWidget);
+    expect(find.byType(EventsScreen), findsOneWidget);
   });
 
   testWidgets('Ctrl+M writes a note over the page, and goes back to it', (
@@ -243,6 +243,8 @@ void main() {
   ) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
+    // On Notes, for its "+".
+    await afterCtrlB(tester, LogicalKeyboardKey.keyN);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Ctrl+M / +'), findsNothing);
