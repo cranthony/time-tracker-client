@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'day_picker.dart';
+import 'duration_field.dart';
 import 'durations.dart';
 import '../models/event.dart';
 import '../models/goal.dart';
@@ -11,7 +12,7 @@ import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
 import 'error_sheet.dart';
 import 'goal_editor.dart';
-import 'goal_fields.dart' show deadlineAt, pickDeadline;
+import 'goal_fields.dart' show deadlineAt, deadlineOffset, pickDeadline;
 import 'goal_icon.dart';
 import 'goal_sheet.dart';
 import 'goal_starts.dart';
@@ -43,6 +44,16 @@ Future<String?> pickRetryDeadline(
 
 /// What's picked in [_DeadlineFitDialog].
 enum _FitChoice { extend, move, again }
+
+/// What's picked in [_StartFitDialog]: the deadline measured from its
+/// start, by [_AfterStart]; or these.
+enum _StartChoice { again, keep }
+
+/// [_StartFitDialog]'s deadline measured from its start, [offset] after.
+class _AfterStart {
+  const _AfterStart(this.offset);
+  final Map<String, Object?> offset;
+}
 
 /// Settles how [deadline], [goal]'s new one, fits the goals above it, as
 /// the user says if it doesn't: the deadline to use -- [again] asks for
@@ -469,8 +480,8 @@ class GoalActions {
   }
 
   /// Edits [goal] -- a change of its status made as [setStatus] makes it,
-  /// with the rest of the edit, and a deadline after a parent's made to
-  /// fit as the user says ([settleDeadline]).
+  /// with the rest of the edit, and its deadline made to fit as the user
+  /// says ([_settled]).
   Future<void> edit(Goal goal) async {
     final changes = await showGoalEditor(
       context,
@@ -479,7 +490,30 @@ class GoalActions {
       now: now,
     );
     if (changes == null || changes.isEmpty || !context.mounted) return;
-    final fields = {...changes};
+    final settled = await _settled(goal, changes);
+    if (settled == null || !context.mounted) return;
+    final (fields, first) = settled;
+    if (fields.remove('status') case final String status) {
+      await setStatus(goal, status, also: fields, first: first);
+      return;
+    }
+    await save("Couldn't save ${goalTitle(goal)}", [
+      ...first,
+      GoalUpdate(goal.id, fields),
+    ]);
+  }
+
+  /// [changes] to [goal], with its deadline made to fit as the user says:
+  /// after when it starts ([_settleStart]), and by its parents'
+  /// ([settleDeadline]) -- and what's to be changed first, for that. Null
+  /// if it's called off.
+  Future<(Map<String, Object?>, List<GoalChange>)?> _settled(
+    Goal goal,
+    Map<String, Object?> changes,
+  ) async {
+    final started = await _settleStart(goal, changes);
+    if (started == null || !context.mounted) return null;
+    final fields = {...started};
     var first = const <GoalChange>[];
     final staysOpen = switch (fields['status']) {
       final String s => s == 'active' || s == 'inactive',
@@ -494,7 +528,7 @@ class GoalActions {
         now: now,
         again: _anotherDeadline,
       );
-      if (settled == null || !context.mounted) return;
+      if (settled == null || !context.mounted) return null;
       fields['deadline'] = settled.deadline;
       switch (settled.fit) {
         case ExtendParents():
@@ -506,14 +540,69 @@ class GoalActions {
           break;
       }
     }
-    if (fields.remove('status') case final String status) {
-      await setStatus(goal, status, also: fields, first: first);
-      return;
+    return (fields, first);
+  }
+
+  /// [changes] to [goal], or, if they'd leave it waiting to start past its
+  /// own deadline ([startsPastDeadline]), which it can't, as the user says
+  /// then: due a while after it starts, due by another date, or left so.
+  /// Null if it's called off. Nothing's asked of a change that doesn't
+  /// touch when it starts or is due.
+  Future<Map<String, Object?>?> _settleStart(
+    Goal goal,
+    Map<String, Object?> changes,
+  ) async {
+    const touching = {
+      'status',
+      'activate_when',
+      'deadline',
+      'deadline_rule',
+      'deadline_offset_minutes',
+    };
+    if (!changes.keys.any(touching.contains)) return changes;
+    var fields = changes;
+    while (true) {
+      final tree = GoalTree(
+        applied(goals, [
+          // The server's word on when it starts was before these.
+          GoalUpdate(goal.id, {...fields, 'expected_start': null}),
+        ], now: now()),
+      );
+      final after = tree[goal.id]!;
+      final start = startsPastDeadline(after, tree, now: now());
+      if (start == null) return fields;
+      final choice = await showDialog<Object>(
+        context: context,
+        builder: (context) =>
+            _StartFitDialog(goal: after, start: start, tree: tree, now: now()),
+      );
+      if (!context.mounted) return null;
+      switch (choice) {
+        case _AfterStart(:final offset):
+          return {
+            ...fields,
+            'deadline_rule': {'after_start': offset},
+            'deadline_offset_minutes': null,
+          }..remove('deadline');
+        case _StartChoice.keep:
+          return fields;
+        case _StartChoice.again:
+          final picked = await pickDeadline(
+            context,
+            initialDate: DateTime(start.year, start.month, start.day + 7),
+            firstDate: DateTime(start.year, start.month, start.day),
+            lastDate: DateTime(start.year + 20),
+          );
+          if (!context.mounted) return null;
+          if (picked != null) {
+            fields = {...fields, 'deadline': picked}
+              ..remove('deadline_rule')
+              ..remove('deadline_offset_minutes');
+          }
+        default:
+          return null;
+      }
     }
-    await save("Couldn't save ${goalTitle(goal)}", [
-      ...first,
-      GoalUpdate(goal.id, fields),
-    ]);
   }
 
   /// Asks for a deadline in place of [deadline].
@@ -656,7 +745,8 @@ class GoalActions {
   }
 
   /// Deactivates [goal] until what's picked comes ([pickDeactivateUntil]):
-  /// inactive, waiting for it before it's activated again.
+  /// inactive, waiting for it before it's activated again -- and, due
+  /// before then, its deadline made to fit as the user says ([_settled]).
   Future<void> deactivateUntil(Goal goal) async {
     final when = await pickDeactivateUntil(
       context,
@@ -665,7 +755,13 @@ class GoalActions {
       now: now,
     );
     if (when == null || !context.mounted) return;
-    await deactivate(goal, also: {'activate_when': when});
+    final settled = await _settled(goal, {
+      'status': 'inactive',
+      'activate_when': when,
+    });
+    if (settled == null || !context.mounted) return;
+    final (fields, first) = settled;
+    await deactivate(goal, also: fields..remove('status'), first: first);
   }
 
   /// Marks [goal] [status] ("done", "missed" or "obsolete"), asking for a
@@ -1063,6 +1159,130 @@ class _DeadlineFitDialog extends StatelessWidget {
                   'as it is',
                 ),
                 onTap: () => Navigator.of(context).pop(_FitChoice.again),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+      ],
+    );
+  }
+}
+
+/// [goal], as it would be, is due before [start], when it's expected to
+/// start, so it wouldn't: says so, and asks to have it due a while after
+/// it starts -- how long's asked here, a week to start with -- to pick
+/// another date, or to leave it so.
+class _StartFitDialog extends StatefulWidget {
+  const _StartFitDialog({
+    required this.goal,
+    required this.start,
+    required this.tree,
+    required this.now,
+  });
+
+  final Goal goal;
+  final DateTime start;
+  final GoalTree tree;
+  final DateTime now;
+
+  @override
+  State<_StartFitDialog> createState() => _StartFitDialogState();
+}
+
+class _StartFitDialogState extends State<_StartFitDialog> {
+  final _after = TextEditingController(text: '${7 * Duration.minutesPerDay}');
+
+  @override
+  void dispose() {
+    _after.dispose();
+    super.dispose();
+  }
+
+  String get _startLabel {
+    final strings = MaterialLocalizations.of(context);
+    final start = widget.start;
+    final day = strings.formatMediumDate(start);
+    return start.hour == 0 && start.minute == 0
+        ? day
+        : '$day, ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(start))}';
+  }
+
+  /// The deadline it would have, due [offset] after it starts when it's
+  /// expected to.
+  String? _expected(Map<String, Object?> offset) => expectedDeadline(
+    Goal.fromJson({
+      ...widget.goal.toJson()..remove('deadline'),
+      'deadline_rule': {'after_start': offset},
+    }),
+    widget.tree,
+    now: widget.now,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final goal = widget.goal;
+    final offset = deadlineOffset(_after.text);
+    final expected = offset == null ? null : _expected(offset);
+    return AlertDialog(
+      title: const Text('Due before it starts'),
+      contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
+      content: SizedBox(
+        width: 440,
+        child: HotkeyItems(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                child: Text(
+                  '“${goalTitle(goal)}” is due '
+                  '${deadlineLabel(context, goal.deadline)}, but isn’t '
+                  'expected to start until $_startLabel. A goal can’t start '
+                  'once its deadline has passed, so it would stay inactive.',
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.update),
+                enabled: offset != null,
+                title: const Text('Due after it starts'),
+                subtitle: expected == null
+                    ? null
+                    : Text(
+                        'Due ${deadlineLabel(context, expected)}, if it '
+                        'starts when expected',
+                      ),
+                onTap: offset == null
+                    ? null
+                    : () => Navigator.of(context).pop(_AfterStart(offset)),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(72, 0, 24, 8),
+                child: DurationField(
+                  controller: _after,
+                  label: 'How long after it starts',
+                  units: DurationUnits.weeksDays,
+                  onChanged: () => setState(() {}),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.event),
+                title: const Text('Pick another date…'),
+                subtitle: Text('After it’s expected to start, $_startLabel'),
+                onTap: () => Navigator.of(context).pop(_StartChoice.again),
+              ),
+              ListTile(
+                leading: const Icon(Icons.block),
+                title: const Text('Leave the deadline'),
+                subtitle: const Text(
+                  'It stays inactive until its deadline is changed',
+                ),
+                onTap: () => Navigator.of(context).pop(_StartChoice.keep),
               ),
             ],
           ),

@@ -258,14 +258,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
 
   /// How long after what it's measured from it's due: days, if it's
   /// whole days, else minutes; null if what's typed isn't a length.
-  Map<String, Object?>? get _afterOffset =>
-      switch (num.tryParse(_after.text.trim())?.round()) {
-        final m? when m >= 0 && m % Duration.minutesPerDay == 0 => {
-          'days': m ~/ Duration.minutesPerDay,
-        },
-        final m? when m >= 0 => {'minutes': m},
-        _ => null,
-      };
+  Map<String, Object?>? get _afterOffset => deadlineOffset(_after.text);
 
   /// What its deadline is measured from, as the server takes it, when it's
   /// its start or another goal's; null otherwise.
