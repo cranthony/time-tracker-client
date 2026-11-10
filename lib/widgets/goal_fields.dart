@@ -121,6 +121,18 @@ String? ruleLabel(Goal goal, GoalTree tree) {
   };
 }
 
+/// [minutes], a [DurationField]'s, as how long after what it's measured
+/// from a deadline is, as the server takes it: days, if it's whole days,
+/// else minutes; null if it isn't a length of time.
+Map<String, Object?>? deadlineOffset(String minutes) =>
+    switch (num.tryParse(minutes.trim())?.round()) {
+      final m? when m >= 0 && m % Duration.minutesPerDay == 0 => {
+        'days': m ~/ Duration.minutesPerDay,
+      },
+      final m? when m >= 0 => {'minutes': m},
+      _ => null,
+    };
+
 /// Whether a sub-goal's parent, [parentTitle], needs it done.
 String requiredLabel(String parentTitle, bool required) => required
     ? '“$parentTitle” needs it done to be done'

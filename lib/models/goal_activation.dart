@@ -165,6 +165,21 @@ DateTime? expectedStart(
   return at.isAfter(now) ? at : null;
 }
 
+/// When [goal], waiting, is expected to start, if its own deadline will
+/// have come by then: a goal can't start past its deadline
+/// ([startingWaiting]), so it would stay inactive. Null if it can start,
+/// or there's no telling when it will.
+DateTime? startsPastDeadline(
+  Goal goal,
+  GoalTree tree, {
+  required DateTime now,
+}) {
+  final due = goal.due;
+  if (due == null || !goal.inactive) return null;
+  final start = expectedStart(goal, tree, now: now);
+  return start == null || due.isAfter(start) ? null : start;
+}
+
 /// [goal]'s deadline, or, waiting for one -- measured from a start that
 /// hasn't come -- the one it's expected to have.
 String? expectedDeadline(

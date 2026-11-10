@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.253.0
+
+- Deactivating a goal until after its deadline, or setting that in its
+  editor, now says so, since a goal can't start once its deadline has
+  passed and would stay inactive. It asks whether to make it due a while
+  after it starts (a week to begin with), pick another date, or leave
+  the deadline as it is.
+
 ## 7.252.0
 
 - An event's people, locations, actions and goals are all listed alike:
