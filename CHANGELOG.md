@@ -6,6 +6,11 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.259.0
+
+- The home screen goals widget's goal button is left of its note button,
+  as the calendar's are.
+
 ## 7.258.0
 
 - The home screen goals widget's header matches the calendar's: its
