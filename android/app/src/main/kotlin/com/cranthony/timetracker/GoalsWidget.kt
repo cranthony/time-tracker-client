@@ -212,7 +212,7 @@ private fun Content(
 
 /**
  * "Goals", which opens the Plan page's Goals, then the buttons for a new
- * note and a new goal: above the goals, or below them. As the calendar's
+ * goal and a new note: above the goals, or below them. As the calendar's
  * header is: the same size of title, and the same buttons, each a 32dp
  * circle in its own 48dp tap target, side by side.
  */
@@ -235,14 +235,14 @@ private fun Header(context: Context) {
             maxLines = 1,
         )
         HeaderButton(
-            R.drawable.ic_add_note,
-            context.getString(R.string.add_note_widget_label),
-            AddNoteWidget.addNote(context),
-        )
-        HeaderButton(
             R.drawable.ic_add_goal,
             context.getString(R.string.add_goal_widget_label),
             AddGoalWidget.addGoal(context),
+        )
+        HeaderButton(
+            R.drawable.ic_add_note,
+            context.getString(R.string.add_note_widget_label),
+            AddNoteWidget.addNote(context),
         )
     }
 }

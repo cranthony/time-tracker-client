@@ -12,8 +12,8 @@
 # The cases, in order:
 #
 #   shown      added from the app's menu, it shows the header, "Goals",
-#              the note button and the goal button -- the note button
-#              left of the goal button, each in a square tap target, as
+#              the goal button and the note button -- the goal button
+#              left of the note button, each in a square tap target, as
 #              the calendar's are -- and the sample data's active
 #              goals, the soonest due first: those due today -- "Sign up for the
 #              race" (12:30), "Show the goals due above the timeline"
@@ -182,8 +182,8 @@ else
     missing+=('the goal button')
   grep -qE '(text|content-desc)="Add note"' "$OUT/goals_shown.txt" ||
     missing+=('the note button')
-  # The note button's tap target left of the goal button's, on the same
-  # line, not overlapping it; each square, 48dp by 48dp as the
+  # The goal button's tap target left of the note button's, on the same
+  # line, not overlapping it, as the calendar has them; each square, 48dp by 48dp as the
   # calendar's are, not the old 36dp by 28dp.
   bounds_of() {
     grep "$WIDGET" "$OUT/goals_shown.txt" | grep -E "content-desc=\"$1\"" | head -1 |
@@ -192,10 +192,10 @@ else
   read -r note_l note_t note_r note_b <<<"$(bounds_of 'Add note')"
   read -r goal_l goal_t goal_r goal_b <<<"$(bounds_of 'Add goal')"
   if [ -z "${note_b:-}" ] || [ -z "${goal_b:-}" ] ||
-    [ "$note_t" != "$goal_t" ] || [ "$goal_l" -lt "$note_r" ] ||
+    [ "$note_t" != "$goal_t" ] || [ "$note_l" -lt "$goal_r" ] ||
     [ $((note_r - note_l)) != $((note_b - note_t)) ] ||
     [ $((goal_r - goal_l)) != $((goal_b - goal_t)) ]; then
-    missing+=("the note button left of the goal button, each square (note [${note_l:-?},${note_t:-?}][${note_r:-?},${note_b:-?}], goal [${goal_l:-?},${goal_t:-?}][${goal_r:-?},${goal_b:-?}])")
+    missing+=("the goal button left of the note button, each square (note [${note_l:-?},${note_t:-?}][${note_r:-?},${note_b:-?}], goal [${goal_l:-?},${goal_t:-?}][${goal_r:-?},${goal_b:-?}])")
   fi
   grep -qE 'text="Today' "$OUT/goals_shown.txt" ||
     missing+=('"Today"')
