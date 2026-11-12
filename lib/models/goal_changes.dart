@@ -1,4 +1,5 @@
 import 'goal.dart';
+import 'proposal.dart' show ProposalGoalChange;
 
 /// One goal's part of a change to several: made, changed or deleted.
 /// A change to several goals is a list of these, in the order they're
@@ -501,6 +502,44 @@ List<GoalChange> retryingToFit(
       ...withFields(retry, goal.id, {'parent_id': made?.id ?? to}),
     ],
   };
+}
+
+/// [goals] as they'll be once [changes] -- a proposal's, still to be
+/// applied -- are made, each as of its time (or [now]): a goal closed
+/// as its status, or missed and tried again by its retry deadline, made
+/// to fit as it says ([retryingToFit]). What's shown while they wait,
+/// as the proposal's events are. A goal gone, closed already, or already
+/// due by the retry deadline -- tried again elsewhere -- is left as it is.
+List<Goal> withGoalChanges(
+  List<Goal> goals,
+  Iterable<ProposalGoalChange> changes, {
+  required DateTime now,
+}) {
+  var out = goals;
+  for (final c in changes) {
+    final tree = GoalTree(out);
+    final goal = tree[c.goalId];
+    if (goal == null || goal.closed) continue;
+    if (c.status == 'missed' &&
+        c.retryDeadline != null &&
+        goal.deadline == c.retryDeadline) {
+      continue;
+    }
+    final at = c.at ?? now;
+    out = applied(out, switch (c.retryDeadline) {
+      final deadline? when c.status == 'missed' => retryingToFit(
+        tree,
+        goal,
+        deadline,
+        c.retryFit,
+        now: at,
+      ),
+      _ => [
+        GoalUpdate(goal.id, {'status': c.status}),
+      ],
+    }, now: at);
+  }
+  return out;
 }
 
 /// The end of [now]'s day, as a deadline: "End of today".

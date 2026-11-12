@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/goal_changes.dart';
 import 'package:time_tracker_client/models/note.dart';
+import 'package:time_tracker_client/models/proposal.dart';
 
 final _now = DateTime(2026, 10, 17, 9);
 
@@ -336,5 +337,58 @@ void main() {
       now: _now,
     ).firstWhere((g) => g.id == 'a');
     expect(plain.history.last.toJson().containsKey('note'), isFalse);
+  });
+
+  group('withGoalChanges', () {
+    ProposalGoalChange change(
+      String id,
+      String status, {
+      String? retryDeadline,
+    }) => ProposalGoalChange(
+      goalId: id,
+      status: status,
+      at: _now,
+      retryDeadline: retryDeadline,
+    );
+
+    test('closes a goal as its change says, at its time', () {
+      final shown = withGoalChanges(
+        [_goal('a', deadline: '2026-10-16')],
+        [change('a', 'done')],
+        now: _now,
+      ).single;
+      expect(shown.status, 'done');
+      expect(shown.history.last.status, 'done');
+      expect(shown.history.last.at.isAtSameMomentAs(_now), isTrue);
+    });
+
+    test('misses one and tries it again: open, due by the new deadline, '
+        'its history keeping the deadline it missed', () {
+      final shown = withGoalChanges(
+        [_goal('a', deadline: '2026-10-16')],
+        [change('a', 'missed', retryDeadline: '2026-10-20')],
+        now: _now,
+      ).single;
+      expect(shown.status, 'active');
+      expect(shown.deadline, '2026-10-20');
+      expect(
+        [for (final h in shown.history) '${h.status} ${h.deadline}'],
+        ['active null', 'missed 2026-10-16', 'active 2026-10-20'],
+      );
+    });
+
+    test('leaves alone a goal gone, closed, or already tried again by '
+        'that deadline', () {
+      final goals = [
+        _goal('closed', status: 'done', deadline: '2026-10-16'),
+        _goal('retried', deadline: '2026-10-20'),
+      ];
+      final shown = withGoalChanges(goals, [
+        change('gone', 'done'),
+        change('closed', 'missed'),
+        change('retried', 'missed', retryDeadline: '2026-10-20'),
+      ], now: _now);
+      expect(shown, same(goals));
+    });
   });
 }

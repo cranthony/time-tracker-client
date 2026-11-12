@@ -366,6 +366,38 @@ class _EventsScreenState extends State<EventsScreen> {
   List<Goal>? _goalColorsOf;
   Map<String, Color> _goalColorsMemo = const {};
 
+  /// The goals as shown on the goals due strip and the day's summary: as
+  /// they're kept, with the open proposal's goal changes still to be
+  /// applied made -- and those an edit applies, still waiting to save --
+  /// as its events are shown as it has them. Null until they're loaded.
+  List<Goal>? get _shownGoals {
+    final goals = _memory.goals;
+    final loaded = _loadedProposal;
+    final proposal = _proposal;
+    if (goals == null || loaded == null || proposal == null) return goals;
+    final changes = [
+      for (final w
+          in widget.eventOutbox?.pending ?? const <PendingEventWrite>[])
+        ...w.goalChangesApplied(loaded),
+      ...proposal.goalChanges,
+    ];
+    if (changes.isEmpty) return goals;
+    final key = [
+      for (final c in changes)
+        '${c.goalId}|${c.status}|${c.at}|${c.retryDeadline}|'
+            '${c.retryFit?.toJson()}',
+    ].join('\n');
+    if (_shownGoalsKept case (final kept, final keptKey, final shown)
+        when identical(kept, goals) && keptKey == key) {
+      return shown;
+    }
+    final shown = withGoalChanges(goals, changes, now: widget.clock());
+    _shownGoalsKept = (goals, key, shown);
+    return shown;
+  }
+
+  (List<Goal>, String, List<Goal>)? _shownGoalsKept;
+
   /// When notes were last compacted; null until it's known.
   DateTime? get _lastCompaction => _memory.lastCompaction;
 
@@ -649,6 +681,10 @@ class _EventsScreenState extends State<EventsScreen> {
   void _closeProposal(String id, {required bool applied}) {
     if (!mounted || !_closedHere.add(id)) return;
     if (applied && _loadedProposal?.id == id) {
+      // Its goal changes are made now: shown so till the goals are in.
+      if (_shownGoals case final goals?) _memory.showGoals(goals);
+    }
+    if (applied && _loadedProposal?.id == id) {
       // Kept as seen: nothing in it is new any more.
       final loaded = _loadedProposal!;
       if (_proposalLoaded) _seen.saw(loaded.id, loaded.revision);
@@ -665,6 +701,8 @@ class _EventsScreenState extends State<EventsScreen> {
     unawaited(_refresh());
     // The actions it made, or approved, as the server has them now.
     unawaited(_loadActions());
+    // And the goals it changed, or made.
+    unawaited(_reloadGoals());
   }
 
   /// How changes are made: by way of [EventsScreen.eventOutbox], or at
@@ -1628,6 +1666,18 @@ class _EventsScreenState extends State<EventsScreen> {
         }
       case final Proposal amended:
         final loaded = _loadedProposal;
+        // A goal change applied, or a goal made: changed where it's kept.
+        if (write.changesGoals) {
+          if (loaded != null) {
+            final made = write.goalChangesApplied(loaded);
+            if (_memory.goals case final goals? when made.isNotEmpty) {
+              _memory.showGoals(
+                withGoalChanges(goals, made, now: widget.clock()),
+              );
+            }
+          }
+          unawaited(_reloadGoals());
+        }
         if (loaded == null || loaded.id != amended.id) return;
         setState(() {
           _editedHere
@@ -5924,8 +5974,15 @@ class _EventsScreenState extends State<EventsScreen> {
         final amended = await _amend(edits);
         if (!mounted) return;
         _amended(amended, said!);
-        // Applied: the goal's changed where it's kept.
-        if (choice is ApplyGoalChange) unawaited(_reloadGoals());
+        // Applied: the goal's changed where it's kept -- shown so till
+        // the goals are in. One waiting to save is shown so meanwhile
+        // ([_shownGoals]), and they're loaded again once it's saved.
+        if (choice is ApplyGoalChange && !_writes.queued) {
+          if (_memory.goals case final goals?) {
+            _memory.showGoals(withGoalChanges(goals, [c], now: widget.clock()));
+          }
+          unawaited(_reloadGoals());
+        }
       },
     );
   }
@@ -6298,7 +6355,7 @@ class _EventsScreenState extends State<EventsScreen> {
         events: events,
         day: _day,
         actions: _actionsById,
-        goals: _memory.goals ?? const [],
+        goals: _shownGoals ?? const [],
         collapsed: _summaryCollapsed,
         onCollapsed: _setSummaryCollapsed,
         durations: _summaryDurations,
@@ -6323,7 +6380,7 @@ class _EventsScreenState extends State<EventsScreen> {
         onCollapsed: _setAllDayCollapsed,
         onTap: _openGoogleEvent,
       ),
-    if (_memory.goals case final goals?)
+    if (_shownGoals case final goals?)
       GoalsDueStrip(
         goals: goalsDueOn(goals, _day),
         missed: missedOn(goals, _day),
