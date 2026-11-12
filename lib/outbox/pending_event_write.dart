@@ -288,8 +288,9 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
   }
 
   /// [proposal] with it applied, if it's of it: the events an edit
-  /// updates, cancels, puts back and creates, as the user decided them; a
-  /// note left, open, under a [pendingId], or one withdrawn.
+  /// updates, cancels, puts back and creates, as the user decided them,
+  /// and the goal changes it settles; a note left, open, under a
+  /// [pendingId], or one withdrawn.
   Proposal projectProposal(Proposal proposal) {
     if (proposalId != proposal.id) return proposal;
     if (kind == EventWriteKind.addNote || kind == EventWriteKind.withdrawNote) {
@@ -373,8 +374,99 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       }
     }
     events.sort((a, b) => a.start.compareTo(b.start));
-    return proposal.copyWith(events: events);
+    final (goalChanges, settledGoalChanges) = _settlingGoals(proposal);
+    return proposal.copyWith(
+      events: events,
+      goalChanges: goalChanges,
+      settledGoalChanges: settledGoalChanges,
+    );
   }
+
+  /// [proposal]'s goal changes, and those settled, once [edits] settle
+  /// them, as the server will: one applied or dropped leaves its changes,
+  /// one changed is kept, the user's fields over Claude's -- or added, for
+  /// a goal it didn't change -- as the user's.
+  (List<ProposalGoalChange>, List<GoalChangeSettled>) _settlingGoals(
+    Proposal proposal,
+  ) {
+    final pending = [...proposal.goalChanges];
+    final settled = [...proposal.settledGoalChanges];
+    for (final edit in edits.goalChanges) {
+      final id = edit.goalId;
+      final proposed = pending.where((c) => c.goalId == id).firstOrNull;
+      final status = edit.status ?? proposed?.status;
+      final missed = status == 'missed';
+      final change = ProposalGoalChange(
+        goalId: id,
+        status: status ?? 'done',
+        title: proposed?.title,
+        path: proposed?.path ?? const [],
+        at: edit.at ?? proposed?.at ?? proposal.through,
+        noteIds: proposed?.noteIds ?? const [],
+        retryDeadline: missed
+            ? edit.retryDeadline ?? proposed?.retryDeadline
+            : null,
+        // A new deadline comes with its own fit, or none.
+        retryFit: !missed
+            ? null
+            : edit.retryDeadline != null
+            ? edit.retryFit
+            : edit.retryFit ?? proposed?.retryFit,
+        decidedBy: DecidedBy.user,
+      );
+      final dropped = edit.use == GoalChangeUse.drop;
+      pending.removeWhere((c) => c.goalId == id);
+      settled.removeWhere((s) => s.goalId == id);
+      if (edit.use == GoalChangeUse.change && status != null) {
+        pending.add(change);
+      }
+      settled.add(
+        GoalChangeSettled(
+          goalId: id,
+          use: edit.use,
+          status: dropped ? null : change.status,
+          at: dropped ? null : change.at,
+          retryDeadline: dropped ? null : change.retryDeadline,
+          retryFit: dropped ? null : change.retryFit,
+        ),
+      );
+    }
+    return (pending, settled);
+  }
+
+  /// The goal changes it applies now, as made -- for a write to amend the
+  /// proposal [proposal]: each settled to apply, Claude's change, with
+  /// the user's fields over it.
+  List<ProposalGoalChange> goalChangesApplied(Proposal proposal) {
+    if (kind != EventWriteKind.amend || proposal.id != proposalId) {
+      return const [];
+    }
+    final settled = _settlingGoals(proposal).$2;
+    return [
+      for (final edit in edits.goalChanges)
+        if (edit.use == GoalChangeUse.apply)
+          for (final s in settled)
+            if (s.goalId == edit.goalId && s.status != null)
+              ProposalGoalChange(
+                goalId: s.goalId,
+                status: s.status!,
+                at: s.at,
+                retryDeadline: s.retryDeadline,
+                retryFit: s.retryFit,
+              ),
+    ];
+  }
+
+  /// Whether, saved, it changes goals where they're kept: a goal change
+  /// applied, or a goal made among the additions.
+  bool get changesGoals =>
+      kind == EventWriteKind.amend &&
+      (edits.goalChanges.any((c) => c.use == GoalChangeUse.apply) ||
+          edits.additions.any(
+            (a) =>
+                a.kind == AdditionKind.goal &&
+                (a.use == AdditionUse.create || a.deadline != null),
+          ));
 
   @override
   PendingEventWrite copyWith({

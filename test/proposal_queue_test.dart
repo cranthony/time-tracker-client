@@ -506,6 +506,60 @@ void main() {
     },
   );
 
+  test('a queued edit settling goal changes shows them settled: one '
+      'changed kept as the user\'s, one applied made now', () {
+    final proposal = _proposal().copyWith(
+      goalChanges: [
+        ProposalGoalChange(goalId: 'fence', status: 'missed', at: _at(13)),
+        ProposalGoalChange(goalId: 'recipe', status: 'done', at: _at(13)),
+      ],
+    );
+    final write = PendingEventWrite(
+      id: 'w1',
+      kind: EventWriteKind.amend,
+      label: 'Goal changes',
+      made: _at(15),
+      proposalId: 'p1',
+      revision: 3,
+      edits: ProposalEdits(
+        goalChanges: [
+          (
+            goalId: 'fence',
+            use: GoalChangeUse.change,
+            status: null,
+            at: null,
+            retryDeadline: '2026-10-05',
+            retryFit: null,
+          ),
+          (
+            goalId: 'recipe',
+            use: GoalChangeUse.apply,
+            status: null,
+            at: null,
+            retryDeadline: null,
+            retryFit: null,
+          ),
+        ],
+      ),
+    );
+    final shown = write.projectProposal(proposal);
+    final fence = shown.goalChange('fence')!;
+    expect(fence.status, 'missed');
+    expect(fence.retryDeadline, '2026-10-05');
+    expect(fence.decidedBy, DecidedBy.user);
+    expect(shown.goalChange('recipe'), isNull);
+    expect(
+      [for (final s in shown.settledGoalChanges) '${s.goalId} ${s.use.name}'],
+      ['fence change', 'recipe apply'],
+    );
+    expect(write.changesGoals, isTrue);
+    expect(
+      [for (final c in write.goalChangesApplied(proposal)) c.goalId],
+      ['recipe'],
+    );
+    expect(write.goalChangesApplied(proposal).single.status, 'done');
+  });
+
   test('a kept write of the proposal reads back as it was written', () {
     final write = PendingEventWrite(
       id: 'w1',

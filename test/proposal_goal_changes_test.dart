@@ -444,6 +444,55 @@ void main() {
       );
     });
 
+    testWidgets('the goals due strip shows the goal changes still to be '
+        'made as made, as the events are -- not where they\'re kept', (
+      tester,
+    ) async {
+      await open(tester);
+      // The fence, due yesterday, is missed in the proposal: not overdue.
+      expect(find.text('Overdue'), findsNothing);
+      expect(
+        memory.goals!.singleWhere((g) => g.id == 'fence').status,
+        'inactive',
+      );
+
+      await page(tester, 'Goals (2)');
+      await tester.tap(find.byTooltip('Next goal'));
+      await tester.pumpAndSettle();
+      // Missed and tried again by tomorrow: not overdue.
+      await settle(tester, 'Missed, try again by…');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(find.text('Overdue'), findsNothing);
+      expect(
+        memory.goals!.singleWhere((g) => g.id == 'fence').deadline,
+        '2026-09-29',
+      );
+
+      // Dropped, it's overdue again.
+      await settle(tester, 'Drop it');
+      expect(find.text('Overdue'), findsOneWidget);
+    });
+
+    testWidgets('confirmed, the goals are loaded again, as the server '
+        'made them', (tester) async {
+      await open(tester);
+      proposals.onConfirm = (proposal) async {
+        await store.updateGoal('fence', {'status': 'missed'});
+        return ProposalOutcome(
+          status: ProposalOutcomeStatus.applied,
+          proposal: proposal.copyWith(state: ProposalState.applied),
+        );
+      };
+      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.pumpAndSettle();
+      expect(
+        memory.goals!.singleWhere((g) => g.id == 'fence').status,
+        'missed',
+      );
+      expect(find.text('Overdue'), findsNothing);
+    });
+
     group('a retry due after its parent', () {
       Goal goal(String id, String deadline, {String? parent}) => Goal.fromJson({
         'id': id,

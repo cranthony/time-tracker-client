@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.260.0
+
+- On Events, the goals due strip and the day's summary show the open
+  proposal's goal changes as made, as its events are shown: a goal it
+  marks missed and tries again, or closes, isn't overdue while it waits
+  to be confirmed -- nor while an edit applying one waits to save.
+- Confirming a proposal loads the goals again, so a goal it changed no
+  longer shows as it was until its page is refreshed; so does an edit
+  applying a goal change, once it's saved.
+
 ## 7.259.0
 
 - The home screen goals widget's goal button is left of its note button,
