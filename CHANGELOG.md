@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.260.1
+
+- On Events, a goal closed after its deadline -- an overdue one marked
+  done, missed or obsolete -- shows as closed on the goals due strip both
+  on the day it was due and on the day it closed; it had dropped out of
+  sight on the day it closed.
+
 ## 7.260.0
 
 - On Events, the goals due strip and the day's summary show the open

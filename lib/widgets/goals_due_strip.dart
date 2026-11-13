@@ -9,29 +9,33 @@ import 'goal_tile.dart';
 import 'hotkeys.dart';
 
 /// The goals due on [day], from [goals] -- a closed one on the day it
-/// closed instead, if that's sooner, so one done early shows when it was
-/// done: by status -- active, inactive, done, missed, then obsolete --
-/// then each status's as [byPriority] has them in [tree] (by default,
-/// [goals] themselves): the highest priority first, then those due at a
-/// time, by time, then those due by its end, by title.
+/// closed too, so one closed late (overdue) -- done, missed or obsolete
+/// -- shows as closed both on the day it was due and on the day it
+/// closed, and one closed early only on the day it closed: by status -- active, inactive, done, missed, then
+/// obsolete -- then each status's as [byPriority] has them in [tree] (by
+/// default, [goals] themselves): the highest priority first, then those
+/// due at a time, by time, then those due by its end, by title.
 List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
   final date = deadlineOf(day);
   return [
     for (final g in goals)
-      if (_shownOn(g) == date) g,
+      if (_shownOn(g).contains(date)) g,
   ]..sort(_byStatus(tree ?? GoalTree(goals)));
 }
 
-/// The day [goal] is among [goalsDueOn]'s: the day it's due or, if it's
-/// closed, the day it closed, whichever is sooner. Null if it isn't due.
-String? _shownOn(Goal goal) {
+/// The days [goal] is among [goalsDueOn]'s: the day it's due or, if it
+/// closed before then, the day it closed; if it closed after it was due,
+/// both the day it was due and the day it closed. None if it isn't due.
+Set<String> _shownOn(Goal goal) {
   final due = dueDay(goal);
-  if (due == null) return null;
+  if (due == null) return const {};
   final closed = switch (goal.closedAt) {
     final at? => deadlineOf(at.toLocal()),
     null => null,
   };
-  return closed != null && closed.compareTo(due) < 0 ? closed : due;
+  if (closed == null) return {due};
+  if (closed.compareTo(due) < 0) return {closed};
+  return {due, closed};
 }
 
 /// The goals overdue on [day], from [goals]: the open ones -- active or
