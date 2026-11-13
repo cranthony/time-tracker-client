@@ -9,9 +9,9 @@ on. Add the new version's section here at the same time; CI checks both.
 ## 7.260.1
 
 - On Events, a goal marked done after its deadline -- an overdue one --
-  shows as done on the goals due strip on the day it was done, not back
-  on the day it was due, where it had dropped out of sight. One marked
-  missed stays on the day it was due.
+  shows as done on the goals due strip both on the day it was due and on
+  the day it was done; it had dropped out of sight on the day it was
+  done. One marked missed stays only on the day it was due.
 
 ## 7.260.0
 

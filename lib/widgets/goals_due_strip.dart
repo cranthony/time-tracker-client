@@ -9,34 +9,35 @@ import 'goal_tile.dart';
 import 'hotkeys.dart';
 
 /// The goals due on [day], from [goals] -- a done one on the day it was
-/// done instead, so one done early or late (overdue) shows when it was
-/// done, and another closed one on the day it closed if that's sooner:
-/// by status -- active, inactive, done, missed, then obsolete --
-/// then each status's as [byPriority] has them in [tree] (by default,
-/// [goals] themselves): the highest priority first, then those due at a
-/// time, by time, then those due by its end, by title.
+/// done too, so one done late (overdue) shows as done both on the day it
+/// was due and on the day it was done, and one done early only on the
+/// day it was done; another closed one on the day it closed instead, if
+/// that's sooner: by status -- active, inactive, done, missed, then
+/// obsolete -- then each status's as [byPriority] has them in [tree] (by
+/// default, [goals] themselves): the highest priority first, then those
+/// due at a time, by time, then those due by its end, by title.
 List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
   final date = deadlineOf(day);
   return [
     for (final g in goals)
-      if (_shownOn(g) == date) g,
+      if (_shownOn(g).contains(date)) g,
   ]..sort(_byStatus(tree ?? GoalTree(goals)));
 }
 
-/// The day [goal] is among [goalsDueOn]'s: the day it's due or, if it's
-/// done, the day it was done; if it's missed or obsolete, the day it
-/// closed if that's sooner -- one missed late stays on the day it was
-/// missed from. Null if it isn't due.
-String? _shownOn(Goal goal) {
+/// The days [goal] is among [goalsDueOn]'s: the day it's due or, if it
+/// closed before then, the day it closed; if it's done after it was due,
+/// both the day it was due and the day it was done -- one missed late
+/// stays only on the day it was missed from. None if it isn't due.
+Set<String> _shownOn(Goal goal) {
   final due = dueDay(goal);
-  if (due == null) return null;
+  if (due == null) return const {};
   final closed = switch (goal.closedAt) {
     final at? => deadlineOf(at.toLocal()),
     null => null,
   };
-  if (closed == null) return due;
-  if (goal.status == 'done') return closed;
-  return closed.compareTo(due) < 0 ? closed : due;
+  if (closed == null) return {due};
+  if (closed.compareTo(due) < 0) return {closed};
+  return {due, if (goal.status == 'done') closed};
 }
 
 /// The goals overdue on [day], from [goals]: the open ones -- active or
