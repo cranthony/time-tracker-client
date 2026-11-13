@@ -8,11 +8,10 @@ import 'goal_icon.dart';
 import 'goal_tile.dart';
 import 'hotkeys.dart';
 
-/// The goals due on [day], from [goals] -- a done one on the day it was
-/// done too, so one done late (overdue) shows as done both on the day it
-/// was due and on the day it was done, and one done early only on the
-/// day it was done; another closed one on the day it closed instead, if
-/// that's sooner: by status -- active, inactive, done, missed, then
+/// The goals due on [day], from [goals] -- a closed one on the day it
+/// closed too, so one closed late (overdue) -- done, missed or obsolete
+/// -- shows as closed both on the day it was due and on the day it
+/// closed, and one closed early only on the day it closed: by status -- active, inactive, done, missed, then
 /// obsolete -- then each status's as [byPriority] has them in [tree] (by
 /// default, [goals] themselves): the highest priority first, then those
 /// due at a time, by time, then those due by its end, by title.
@@ -25,9 +24,8 @@ List<Goal> goalsDueOn(Iterable<Goal> goals, DateTime day, [GoalTree? tree]) {
 }
 
 /// The days [goal] is among [goalsDueOn]'s: the day it's due or, if it
-/// closed before then, the day it closed; if it's done after it was due,
-/// both the day it was due and the day it was done -- one missed late
-/// stays only on the day it was missed from. None if it isn't due.
+/// closed before then, the day it closed; if it closed after it was due,
+/// both the day it was due and the day it closed. None if it isn't due.
 Set<String> _shownOn(Goal goal) {
   final due = dueDay(goal);
   if (due == null) return const {};
@@ -37,7 +35,7 @@ Set<String> _shownOn(Goal goal) {
   };
   if (closed == null) return {due};
   if (closed.compareTo(due) < 0) return {closed};
-  return {due, if (goal.status == 'done') closed};
+  return {due, closed};
 }
 
 /// The goals overdue on [day], from [goals]: the open ones -- active or

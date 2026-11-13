@@ -86,8 +86,8 @@ void main() {
   });
 
   test('goalsDueOn: a goal closed before its deadline, on the day it '
-      'closed; one missed after, on the day it was due; one done after, '
-      'on both the day it was due and the day it was done', () {
+      'closed; one closed after -- done or missed -- on both the day it '
+      'was due and the day it closed', () {
     Goal closed(String id, String deadline, DateTime at, {String? status}) =>
         Goal(
           id: id,
@@ -128,6 +128,7 @@ void main() {
     ]);
     expect(goalsDueOn(all, DateTime(2026, 10, 21)).map((g) => g.id), [
       'overdue done',
+      'late',
     ]);
   });
 
