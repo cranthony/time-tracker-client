@@ -1,6 +1,7 @@
 import '../models/event.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
+import '../models/proposed_stories.dart';
 import '../services/proposal_repository.dart';
 import '../widgets/other_events.dart';
 import 'outbox.dart';
@@ -375,10 +376,17 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     }
     events.sort((a, b) => a.start.compareTo(b.start));
     final (goalChanges, settledGoalChanges) = _settlingGoals(proposal);
+    final (stories, settledStories) = settleStories(
+      proposal.traitExamples,
+      proposal.settledTraitExamples,
+      edits.traitExamples,
+    );
     return proposal.copyWith(
       events: events,
       goalChanges: goalChanges,
       settledGoalChanges: settledGoalChanges,
+      traitExamples: stories,
+      settledTraitExamples: settledStories,
     );
   }
 

@@ -114,7 +114,8 @@ bool _same(List<String> a, List<String> b) =>
 /// Its menu offers to [onHide] it, to show the calendar under it, or --
 /// [hidden] -- to show it again; while it's hidden, or shown as it last
 /// planned, a line under it says so. With trait fact summaries to
-/// rewrite, its menu offers to [onFacts] show them.
+/// rewrite, its menu offers to [onFacts] show them; with stories of
+/// traits done well to add, to [onStories] show those.
 /// While [busy], nothing can be tapped; nor while [closing] -- confirming,
 /// finishing or abandoning it, which it names -- waits to save.
 class ProposalBar extends StatelessWidget {
@@ -134,11 +135,13 @@ class ProposalBar extends StatelessWidget {
     this.hidden = false,
     this.onHide,
     this.onFacts,
+    this.onStories,
     this.onRevisited,
   });
 
   final Proposal proposal;
   final VoidCallback? onFacts;
+  final VoidCallback? onStories;
 
   /// Goes to the first of the settled events it revisits for historical notes,
   /// which a line under it names.
@@ -285,6 +288,11 @@ class ProposalBar extends StatelessWidget {
                                   TextSpan(
                                     text: ' · $n fact${n == 1 ? '' : 's'}',
                                   ),
+                                if (proposal.traitExamples.length case final n
+                                    when n > 0 && !hidden)
+                                  TextSpan(
+                                    text: ' · $n stor${n == 1 ? 'y' : 'ies'}',
+                                  ),
                               ],
                             ),
                             maxLines: 1,
@@ -352,6 +360,16 @@ class ProposalBar extends StatelessWidget {
                         child: Text(
                           'Facts it rewrites '
                           '(${proposal.factSummaries.length})',
+                        ),
+                      ),
+                    if (onStories case final stories?
+                        when proposal.traitExamples.isNotEmpty ||
+                            proposal.settledTraitExamples.isNotEmpty)
+                      PopupMenuItem(
+                        value: stories,
+                        child: Text(
+                          'Stories it adds '
+                          '(${proposal.traitExamples.length})',
                         ),
                       ),
                     if (onGoTo case final goTo?)

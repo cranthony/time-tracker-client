@@ -98,11 +98,13 @@ Future<void> main() async {
     final actions = sample?.actionsRepository() ?? InMemoryActionsRepository();
     final events = sample?.eventsRepository() ?? InMemoryEventsRepository();
     final people = sample?.peopleRepository() ?? InMemoryPeopleRepository();
+    final traits = sample?.traitsRepository() ?? InMemoryTraitsRepository();
     final proposals = sample?.proposalRepository(
       events: events,
       notes: repository,
       people: people,
       actions: actions,
+      traits: traits,
     );
     // Kept in memory, with the sample's own to start with.
     final health = ClientHealthRecorder(
@@ -136,8 +138,7 @@ Future<void> main() async {
         writeQueue: writeQueue,
         eventOutbox: eventOutbox,
         clientHealth: health,
-        traitsRepository:
-            sample?.traitsRepository() ?? InMemoryTraitsRepository(),
+        traitsRepository: traits,
         peopleRepository: people,
         habitsRepository:
             sample?.habitsRepository() ?? InMemoryHabitsRepository(),

@@ -1965,6 +1965,36 @@ class SampleData {
         ],
       },
       'recap_revision': 3,
+      // Stories of traits done well, from the notes: made once it's
+      // confirmed.
+      'trait_examples': [
+        {
+          'id': '${proposalId}s1',
+          'trait_id': 'thoughtful',
+          'trait_name': 'Thoughtful',
+          'when': _dayOf(0),
+          'person_id': 'sam',
+          'person_name': 'Sam',
+          'what':
+              "Brought Priya's favourite pastry to lunch, remembering her "
+              'big presentation was today.',
+          'why': 'Remembered what mattered to her, and acted on it.',
+          'event_id': 'lunch',
+          'decided_by': 'claude',
+        },
+        {
+          'id': '${proposalId}s2',
+          'trait_id': 'present',
+          'trait_name': 'Present',
+          'when': _dayOf(0),
+          'who': 'The barista',
+          'what':
+              'Stopped the queue to help a lost tourist with directions, '
+              'giving them their full attention.',
+          'why': 'Gave a stranger all of their attention, unhurried.',
+          'decided_by': 'claude',
+        },
+      ],
       'feedback': [
         {
           'id': '${proposalId}f1',
@@ -2005,11 +2035,13 @@ class SampleData {
     NotesRepository? notes,
     PeopleRepository? people,
     ActionsRepository? actions,
+    TraitsRepository? traits,
   }) => InMemoryProposalRepository(
     proposal,
     events: events,
     people: people,
     actions: actions,
+    traits: traits,
     changed: proposalChanges,
     onApplied: (applied) {
       if (notes is InMemoryNotesRepository) {
