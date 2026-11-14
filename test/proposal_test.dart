@@ -1108,7 +1108,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    final confirmButton = find.widgetWithText(FilledButton, 'Confirm');
+    // Confirm: the bar's main button, or -- with more to review -- the
+    // smaller one beside Next.
+    final confirmButton = find.ancestor(
+      of: find.text('Confirm'),
+      matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
+    );
 
     /// [proposalJson] with two stories of traits done well: one Claude's at
     /// the tea, by someone in People; one by someone else, at no event.
@@ -1358,7 +1363,7 @@ void main() {
         find.textContaining('“Confirm what happened” is waiting to save'),
         findsOneWidget,
       );
-      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNull);
 
       unawaited(outbox!.flush(ignoreBackoff: true));
       await tester.pumpAndSettle();
@@ -1599,7 +1604,7 @@ void main() {
       // Work's as planned: plain.
       expect(timeline.marks['work']!.label, isNull);
       expect(timeline.marks.containsKey('talk'), isFalse);
-      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNotNull);
+      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNotNull);
     });
 
     testWidgets('shows a note under the bar -- the first to review -- '
@@ -1824,7 +1829,7 @@ void main() {
         ('Tea at 9', 'n1#1', null),
       );
       expect(find.textContaining('Waiting for Claude:'), findsOneWidget);
-      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNull);
     });
 
     testWidgets("highlights what's changed since the revision last seen", (
@@ -2395,7 +2400,7 @@ void main() {
 
       final note = proposals.proposal!.feedback.last;
       expect((note.text, note.eventId), ('No email', 'abc123def456c1'));
-      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNull);
+      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNull);
       expect(find.textContaining('1 note open'), findsOneWidget);
 
       // Claude's reply beside the note it answers; the open one withdrawn.
@@ -2406,7 +2411,7 @@ void main() {
       await tester.tap(find.text('Withdraw'));
       await tester.pumpAndSettle();
       expect(proposals.calls, contains('withdraw_proposal_note'));
-      expect(tester.widget<FilledButton>(confirmButton).onPressed, isNotNull);
+      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNotNull);
     });
 
     testWidgets('confirming applies it: the band goes, the calendar is as '

@@ -138,9 +138,21 @@ class ProposalBar extends StatelessWidget {
     this.onStories,
     this.onUnsure,
     this.onRevisited,
+    this.onNext,
+    this.nextTooltip,
+    this.progress,
   });
 
   final Proposal proposal;
+
+  /// Steps to the next thing to review, in guided review: while there's
+  /// one, "Next" is where "Confirm" is, and a smaller "Confirm" is at the
+  /// bar's other end. [nextTooltip] says what's next.
+  final VoidCallback? onNext;
+  final String? nextTooltip;
+
+  /// How far guided review has got, under the bar's row.
+  final Widget? progress;
   final VoidCallback? onFacts;
   final VoidCallback? onStories;
 
@@ -193,6 +205,8 @@ class ProposalBar extends StatelessWidget {
         '${e.summary ?? '(no summary)'}, '
             '${strings.formatMediumDate(e.start.toLocal())}',
     ];
+    // Stepping through what to review, with more to see.
+    final guided = onNext != null && !stopped && !hidden;
     final revisiting =
         'Historical notes revisit ${revisits.join('; ')}: what happened '
         'changes, not when.';
@@ -261,6 +275,30 @@ class ProposalBar extends StatelessWidget {
           children: [
             Row(
               children: [
+                // Confirming without stepping through the rest: away
+                // from Next, so it isn't tapped for it.
+                if (guided)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Tooltip(
+                      message: open > 0
+                          ? 'Waiting for Claude to answer your notes'
+                          : 'Confirm $window happened as shown, without '
+                                'reviewing the rest',
+                      child: OutlinedButton.icon(
+                        onPressed: busy || !proposal.confirmable
+                            ? null
+                            : onConfirm,
+                        style: _small.copyWith(
+                          textStyle: WidgetStatePropertyAll(
+                            theme.textTheme.labelMedium,
+                          ),
+                        ),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: const Text('Confirm'),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: InkWell(
                     onTap: onGoTo,
@@ -343,6 +381,15 @@ class ProposalBar extends StatelessWidget {
                     label: const Text('Retry'),
                     style: _compact,
                   )
+                else if (guided)
+                  Tooltip(
+                    message: nextTooltip ?? 'Next to review',
+                    child: FilledButton(
+                      onPressed: busy ? null : onNext,
+                      style: _compact,
+                      child: const Text('Next'),
+                    ),
+                  )
                 else
                   Tooltip(
                     message: open > 0
@@ -409,6 +456,11 @@ class ProposalBar extends StatelessWidget {
                 ),
               ],
             ),
+            if (progress case final progress? when !hidden && !stopped)
+              Padding(
+                padding: const EdgeInsets.only(right: 12, bottom: 2),
+                child: progress,
+              ),
             for (final (icon, text, color) in status)
               InkWell(
                 // The line naming what historical notes revisit goes there.
@@ -447,6 +499,13 @@ class ProposalBar extends StatelessWidget {
   static final _compact = FilledButton.styleFrom(
     visualDensity: VisualDensity.compact,
     padding: const EdgeInsets.symmetric(horizontal: 12),
+  );
+
+  /// Confirming, beside Next: smaller, and quieter.
+  static final _small = OutlinedButton.styleFrom(
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    minimumSize: const Size(0, 32),
   );
 }
 

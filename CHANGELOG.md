@@ -6,6 +6,22 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.265.0
+
+- Guided review: while a proposal has things to review, Next sits where
+  Confirm was, always in the same place, and steps to the next note,
+  goal, addition, story, fact summary or point Claude's unsure of not
+  yet reviewed. Once all have been, Next becomes Confirm; a smaller
+  Confirm at the bar's other end confirms without stepping through.
+- Under the bar, each section's progress: a segment for each thing in
+  it, filled once it's been shown. Tap a section to go to the first one
+  in it not yet reviewed. What's been reviewed is kept for the proposal,
+  and something Claude changes is to review again.
+- The proposal's bar and details are at the top of the panels above the
+  timeline. While it's reviewed, the day's summary, weather, all-day
+  events and goals due fold into one line, which shows them again, so
+  what's reviewed has the room to be seen whole.
+
 ## 7.264.0
 
 - A proposal's details are in review order: Notes, Goals, Added,
