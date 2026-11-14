@@ -1,6 +1,7 @@
 import 'event.dart';
 import 'goal.dart';
 import 'goal_changes.dart';
+import 'proposed_stories.dart';
 import 'note.dart';
 
 /// Where a [Proposal] is: awaiting the user's review, or Claude's
@@ -449,6 +450,8 @@ class Proposal {
     this.settledAdditions = const [],
     this.goalChanges = const [],
     this.settledGoalChanges = const [],
+    this.traitExamples = const [],
+    this.settledTraitExamples = const [],
     this.feedback = const [],
     this.userEdits = const [],
     this.changedSince = const {},
@@ -534,6 +537,14 @@ class Proposal {
 
   /// The goal changes the user settled: applied now, dropped, or changed.
   final List<GoalChangeSettled> settledGoalChanges;
+
+  /// The stories of traits done well it adds when it's applied: Claude's,
+  /// less those the user dropped, with the user's changes over them, and
+  /// the user's own. None from a server without them.
+  final List<ProposedStory> traitExamples;
+
+  /// The stories the user settled: dropped, or changed.
+  final List<StoryEdit> settledTraitExamples;
 
   /// The change [goalChanges] makes to the goal [goalId], if it makes one.
   ProposalGoalChange? goalChange(String? goalId) {
@@ -695,6 +706,14 @@ class Proposal {
       for (final s in json['settled_goal_changes'] as List? ?? const [])
         if (s is Map) ?GoalChangeSettled.fromJson(s.cast<String, Object?>()),
     ],
+    traitExamples: [
+      for (final e in json['trait_examples'] as List? ?? const [])
+        if (e is Map) ?ProposedStory.fromJson(e.cast<String, Object?>()),
+    ],
+    settledTraitExamples: [
+      for (final s in json['settled_trait_examples'] as List? ?? const [])
+        if (s is Map) ?StoryEdit.fromJson(s.cast<String, Object?>()),
+    ],
     feedback: [
       for (final f in json['feedback'] as List? ?? [])
         ProposalFeedback.fromJson((f as Map).cast<String, dynamic>()),
@@ -734,6 +753,8 @@ class Proposal {
     List<AdditionSettled>? settledAdditions,
     List<ProposalGoalChange>? goalChanges,
     List<GoalChangeSettled>? settledGoalChanges,
+    List<ProposedStory>? traitExamples,
+    List<StoryEdit>? settledTraitExamples,
   }) => Proposal(
     id: id,
     revision: revision ?? this.revision,
@@ -754,6 +775,8 @@ class Proposal {
     settledAdditions: settledAdditions ?? this.settledAdditions,
     goalChanges: goalChanges ?? this.goalChanges,
     settledGoalChanges: settledGoalChanges ?? this.settledGoalChanges,
+    traitExamples: traitExamples ?? this.traitExamples,
+    settledTraitExamples: settledTraitExamples ?? this.settledTraitExamples,
     feedback: feedback ?? this.feedback,
     userEdits: userEdits ?? this.userEdits,
     changedSince: changedSince ?? this.changedSince,

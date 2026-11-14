@@ -1079,6 +1079,8 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       // Said twice, a goal change settles the same way: one applied
       // already isn't made again.
       goalChanges: edits.goalChanges,
+      // Said twice, a story's settled the same way.
+      traitExamples: edits.traitExamples,
       through: edits.through,
     );
   }

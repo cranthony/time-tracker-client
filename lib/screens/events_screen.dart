@@ -16,6 +16,7 @@ import '../models/person.dart';
 import '../models/plan_action.dart';
 import '../models/note.dart';
 import '../models/proposal.dart';
+import '../models/proposed_stories.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
 import '../models/trait_icon.dart';
@@ -80,6 +81,8 @@ import '../widgets/other_events.dart';
 import '../widgets/event_summary_dialog.dart';
 import '../widgets/proposal_problem_status.dart';
 import '../widgets/proposal_review.dart';
+import '../widgets/proposed_stories_sheet.dart';
+import '../widgets/trait_example_dialog.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
@@ -1572,11 +1575,17 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// The traits [event] marks, to show by their icons: those a judgment
-  /// of the user gave its top rating, and those a story at it is of.
+  /// of the user gave its top rating, and those a story at it is of --
+  /// or, in the open proposal, will be once it's confirmed.
   List<Trait> _markedTraits(Event event) => markedTraits(
     _memory.traits ?? const [],
     judgments: event.properties['judgments'],
-    storyTraitIds: _memory.storyTraitIds(event.id),
+    storyTraitIds: [
+      ..._memory.storyTraitIds(event.id),
+      for (final s in _shownProposal?.traitExamples ?? const <ProposedStory>[])
+        if (event.id != null && s.example.eventId == event.id)
+          s.example.traitId,
+    ],
   );
 
   /// Loads everyone, every location, every trait and Self's habits, for
@@ -6000,6 +6009,83 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  /// The stories of traits done well the open proposal adds, each to
+  /// change or drop -- amending the proposal.
+  Future<void> _showProposedStories() async {
+    if (_proposal == null) return;
+    final editable = widget.proposals != null;
+    await showProposedStoriesSheet(
+      context,
+      current: () => _shownProposal ?? _proposal!,
+      traits: _memory.traits ?? const [],
+      people: _memory.people,
+      onEdit: editable ? _changeStory : null,
+      onDrop: editable ? _dropStory : null,
+    );
+  }
+
+  /// Asks for [story] as it's to be, and amends the proposal so: the
+  /// fields changed, laid over it.
+  Future<void> _changeStory(ProposedStory story) async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    final trait =
+        (_memory.traits ?? const <Trait>[])
+            .where((t) => t.id == story.example.traitId)
+            .firstOrNull ??
+        Trait(
+          id: story.example.traitId,
+          name: story.traitName ?? story.example.traitId,
+        );
+    final local = MaterialLocalizations.of(context);
+    await showTraitExampleDialog(
+      context,
+      trait: trait,
+      example: story.example,
+      people: _memory.people,
+      clock: widget.clock,
+      // The proposal's events that day: the story can be at one.
+      eventsOn: (day) async => [
+        for (final e in proposal.events ?? const <ProposalEvent>[])
+          if (DateUtils.isSameDay(e.start, day) &&
+              e.status != ProposalEventStatus.cancelled)
+            (
+              id: e.id,
+              label:
+                  '${local.formatTimeOfDay(TimeOfDay.fromDateTime(e.start))} '
+                  '${e.summary ?? '(no summary)'}',
+            ),
+      ],
+      save: (edited) async {
+        final amended = await _amend(
+          ProposalEdits(
+            traitExamples: [
+              StoryEdit.change(story.id, edited.changesFrom(story.example)),
+            ],
+          ),
+          label: 'Change a story of ${trait.name}',
+        );
+        if (mounted) _amended(amended, 'Changed the story of ${trait.name}.');
+        return edited;
+      },
+    );
+  }
+
+  /// Drops [story] from the proposal: it's not made when it's confirmed.
+  Future<void> _dropStory(ProposedStory story) => runOrShowError(
+    context,
+    title: "Couldn't drop it",
+    action: () async {
+      final amended = await _amend(
+        ProposalEdits(
+          traitExamples: [StoryEdit(id: story.id, use: StoryEditUse.drop)],
+        ),
+        label: 'Drop a story',
+      );
+      if (mounted) _amended(amended, 'Dropped the story.');
+    },
+  );
+
   /// Loads the goals again, after one's changed outside the app's own
   /// goal flows -- through the memory, so every page showing them is
   /// told. Best effort: without them, they're shown as they were, till
@@ -6442,6 +6528,7 @@ class _EventsScreenState extends State<EventsScreen> {
               for (final f in t.facts) '${t.id}/${f.id}': f.name,
           },
         ),
+        onStories: _showProposedStories,
       ),
     if (_shownProposal case final proposal?) _buildDetails(proposal),
   ];

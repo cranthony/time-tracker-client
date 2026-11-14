@@ -1121,6 +1121,16 @@ void main() {
         },
       ),
       (
+        'events_proposal_stories',
+        (tester) async {
+          // The stories of traits done well it adds.
+          await tester.tap(find.byTooltip('More'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Stories it adds (2)'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      (
         'events_proposal_notes',
         (tester) async {
           await tester.tap(find.byTooltip('More'));

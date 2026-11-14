@@ -8,6 +8,7 @@ import '../models/goal_changes.dart';
 import '../models/note.dart';
 import '../models/person.dart';
 import '../models/proposal.dart';
+import '../models/proposed_stories.dart';
 import '../widgets/other_events.dart';
 import 'actions_repository.dart';
 import 'events_repository.dart';
@@ -15,6 +16,7 @@ import 'goals_repository.dart';
 import 'mcp_client.dart';
 import 'people_repository.dart';
 import 'response_cache.dart';
+import 'traits_repository.dart';
 
 /// The user's edits to a [Proposal], as `amend_proposal` takes them:
 /// [updates] and [creates] keyed as `compact_notes` takes them (an update
@@ -31,6 +33,7 @@ class ProposalEdits {
     this.notes = const [],
     this.additions = const [],
     this.goalChanges = const [],
+    this.traitExamples = const [],
     this.through,
   });
 
@@ -74,6 +77,10 @@ class ProposalEdits {
   /// one, with its status.
   final List<GoalChangeEdit> goalChanges;
 
+  /// The user's say on the proposal's stories of traits done well, each
+  /// by its id: dropped, or changed -- or added, as the user's own.
+  final List<StoryEdit> traitExamples;
+
   bool get isEmpty =>
       updates.isEmpty &&
       creates.isEmpty &&
@@ -82,6 +89,7 @@ class ProposalEdits {
       notes.isEmpty &&
       additions.isEmpty &&
       goalChanges.isEmpty &&
+      traitExamples.isEmpty &&
       through == null;
 
   /// The ids and keys of the events they name, and the notes' ids.
@@ -147,6 +155,9 @@ class ProposalEdits {
             'retry_fit': ?c.retryFit?.toJson(),
           },
       ],
+    // Only when there are some: an older server still takes the rest.
+    if (traitExamples.isNotEmpty)
+      'trait_examples': [for (final e in traitExamples) e.toJson()],
   };
 
   /// Them as [toJson] wrote them, as they're kept waiting to be sent.
@@ -211,6 +222,9 @@ class ProposalEdits {
               retryDeadline: c['retry_deadline'] as String?,
               retryFit: DeadlineFit.fromJson(c['retry_fit']),
             ),
+      ],
+      traitExamples: [
+        for (final e in maps('trait_examples')) ?StoryEdit.fromJson(e),
       ],
     );
   }
@@ -618,6 +632,7 @@ class InMemoryProposalRepository implements ProposalRepository {
     this.people,
     this.actions,
     this.goals,
+    this.traits,
     Map<int, Set<String>> changed = const {},
   }) : _changed = {...changed},
        _claude = _proposal,
@@ -643,6 +658,9 @@ class InMemoryProposalRepository implements ProposalRepository {
   final PeopleRepository? people;
   final ActionsRepository? actions;
   final GoalsRepository? goals;
+
+  /// Where the stories it adds are made when it's applied, if anywhere.
+  final TraitsRepository? traits;
 
   /// The events' actions and facts before each addition was settled, by
   /// ref, then event id: to put back when it's unsettled.
@@ -830,6 +848,11 @@ class InMemoryProposalRepository implements ProposalRepository {
     final notes = _editedNotes(current, events, edits);
     final (additions, settled) = await _settle(current, events, edits, changed);
     final (goalChanges, settledGoals) = await _settleGoals(current, edits);
+    final (stories, settledStories) = settleStories(
+      current.traitExamples,
+      current.settledTraitExamples,
+      edits.traitExamples,
+    );
     final revision = current.revision + 1;
     _changed[revision] = changed;
     _proposal = current.copyWith(
@@ -844,6 +867,8 @@ class InMemoryProposalRepository implements ProposalRepository {
       settledAdditions: settled,
       goalChanges: goalChanges,
       settledGoalChanges: settledGoals,
+      traitExamples: stories,
+      settledTraitExamples: settledStories,
       reason: 'user edit',
       byUser: true,
       userEdits: [...current.userEdits, edits.toJson()],
@@ -1286,8 +1311,20 @@ class InMemoryProposalRepository implements ProposalRepository {
     );
   }
 
-  /// Writes [proposal]'s outcome to [events].
+  /// Writes [proposal]'s outcome to [events], then makes its stories --
+  /// those that can't be made are left out, as the server warns of them.
   Future<void> _apply(Proposal proposal) async {
+    await _applyEvents(proposal);
+    for (final story in proposal.traitExamples) {
+      try {
+        await traits?.createExample(story.example);
+      } on McpException {
+        // A warning, on the server.
+      }
+    }
+  }
+
+  Future<void> _applyEvents(Proposal proposal) async {
     final events = this.events;
     if (events == null) return;
     for (final e in proposal.reviewed) {

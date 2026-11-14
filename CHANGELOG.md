@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.263.0
+
+- A compaction proposal shows the stories of traits done well it adds
+  once it's confirmed: its bar counts them, and its menu's "Stories it
+  adds" lists each -- its trait's icon and name, when, who, what they
+  did, why, and the event it's at. Each can be changed, or dropped
+  (`trait_examples` on `amend_proposal`); a proposal without any shows
+  none. An event a proposed story is at shows its trait's icon while the
+  proposal's open, and confirming loads the stories again.
+
 ## 7.262.0
 
 - A trait keeps stories: examples of you or someone else embodying it

@@ -1110,6 +1110,107 @@ void main() {
 
     final confirmButton = find.widgetWithText(FilledButton, 'Confirm');
 
+    /// [proposalJson] with two stories of traits done well: one Claude's at
+    /// the tea, by someone in People; one by someone else, at no event.
+    Map<String, Object?> withStories() => {
+      ...proposalJson(),
+      'trait_examples': [
+        {
+          'id': 's1',
+          'trait_id': 'patient',
+          'trait_name': 'Patient',
+          'when': '2026-09-30',
+          'person_id': 'p1',
+          'person_name': 'Robin',
+          'what': 'Waited for the kettle without a word',
+          'why': 'Let it take the time it took',
+          'event_id': 'tea',
+          'decided_by': 'claude',
+        },
+        {
+          'id': 's2',
+          'trait_id': 'patient',
+          'trait_name': 'Patient',
+          'when': '2026-09-30',
+          'who': 'A cashier',
+          'what': 'Counted out the change twice, smiling',
+          'why': 'Took care rather than hurrying',
+          'decided_by': 'claude',
+        },
+      ],
+    };
+
+    for (final queued in [false, true]) {
+      testWidgets('its stories are listed from its menu, and one dropped '
+          'leaves it${queued ? ', shown so while it waits to save' : ''}', (
+        tester,
+      ) async {
+        await open(tester, json: withStories(), queued: queued);
+        expect(find.textContaining('· 2 stories'), findsOneWidget);
+        await tester.tap(find.byTooltip('More'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Stories it adds (2)'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Waited for the kettle without a word'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Robin'), findsOneWidget);
+        expect(find.textContaining('A cashier'), findsOneWidget);
+        expect(find.text('At Tea'), findsOneWidget);
+        expect(find.text('Why: Let it take the time it took'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('More for this story').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Drop'));
+        await tester.pumpAndSettle();
+        expect(find.text('Waited for the kettle without a word'), findsNothing);
+        expect(find.textContaining('1 dropped'), findsOneWidget);
+        await outbox?.flush();
+        await tester.pumpAndSettle();
+        expect(proposals.amends.last.toJson()['trait_examples'], [
+          {'id': 's1', 'use': 'drop'},
+        ]);
+        expect(
+          [for (final s in proposals.proposal!.traitExamples) s.id],
+          ['s2'],
+        );
+      });
+    }
+
+    testWidgets('a story is changed: the fields changed, laid over it', (
+      tester,
+    ) async {
+      await open(tester, json: withStories());
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Stories it adds (2)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More for this story').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Change'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'What they did'),
+        'Counted out the change twice',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+      expect(proposals.amends.last.toJson()['trait_examples'], [
+        {'id': 's2', 'use': 'change', 'what': 'Counted out the change twice'},
+      ]);
+      expect(find.text('Counted out the change twice'), findsOneWidget);
+      expect(find.textContaining('yours'), findsOneWidget);
+    });
+
+    testWidgets("one without stories doesn't offer them", (tester) async {
+      await open(tester);
+      expect(find.textContaining('stor'), findsNothing);
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Stories it adds'), findsNothing);
+    });
+
     testWidgets(
       'its bar names the earlier events historical notes revisit, and '
       'goes to them',
