@@ -14,6 +14,7 @@ import '../models/travel_time.dart';
 import '../models/scoring.dart';
 import '../models/time_split.dart';
 import '../models/trait.dart';
+import '../models/trait_example.dart';
 import '../models/trait_scores.dart';
 import '../outbox/actions_shown.dart';
 import '../outbox/action_writes.dart';
@@ -100,6 +101,20 @@ class PlanMemory extends ChangeNotifier {
   }
 
   List<Trait>? traits;
+
+  /// The traits' examples -- stories of someone embodying one well --
+  /// loaded with them; null until they are. A server without them has
+  /// none.
+  List<TraitExample>? traitExamples;
+
+  /// The ids of the traits [eventId]'s stories are of: those [traitExamples]
+  /// link to it.
+  List<String> storyTraitIds(String? eventId) => eventId == null
+      ? const []
+      : [
+          for (final e in traitExamples ?? const <TraitExample>[])
+            if (e.eventId == eventId) e.traitId,
+        ];
 
   /// How scores combine where nothing says otherwise; loaded with the
   /// traits.
@@ -448,7 +463,19 @@ class PlanMemory extends ChangeNotifier {
         ).wait;
         traits = loaded;
         scoringDefaults = defaults;
+        await loadExamples(repository);
       }, again: again);
+
+  /// Loads the traits' examples again. Best effort: without them, the
+  /// ones loaded before stay.
+  Future<void> loadExamples(TraitsRepository repository) async {
+    try {
+      traitExamples = await repository.examples();
+      notifyListeners();
+    } catch (_) {
+      // As they were.
+    }
+  }
 
   /// Loads everyone and their circles, this visit; [again] asks again.
   Future<void> loadPeople(PeopleRepository repository, {bool again = false}) =>

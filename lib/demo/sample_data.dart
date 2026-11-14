@@ -14,6 +14,7 @@ import '../models/scoring.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
+import '../models/trait_example.dart';
 import '../models/trait_scores.dart';
 import '../services/circadian_repository.dart';
 import '../services/events_repository.dart';
@@ -621,7 +622,52 @@ class SampleData {
   /// The traits. How everyone is rated by them is worked out from the
   /// events, as with the server.
   TraitsRepository traitsRepository() =>
-      InMemoryTraitsRepository(traits: traits);
+      InMemoryTraitsRepository(traits: traits, examples: traitExamples);
+
+  /// The day [daysAgo] days before today, as a story gives it.
+  String _dayOf(int daysAgo) {
+    final day = _at(0, 0, -daysAgo);
+    return '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+        '${day.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Stories of the traits done well: two at past events -- by Sam, and
+  /// by the user -- and one by someone not in People.
+  List<TraitExample> get traitExamples => [
+    TraitExample(
+      id: 'example-dumplings',
+      traitId: 'creative',
+      when: _dayOf(4),
+      personId: 'sam',
+      what:
+          'Folded the last dumplings into little leaves, a pleat neither '
+          'of us had tried before.',
+      why: 'Turned a recipe we were following into something of our own.',
+      eventId: 'past-dumplings',
+      version: 1,
+    ),
+    TraitExample(
+      id: 'example-jazz',
+      traitId: 'present',
+      when: _dayOf(9),
+      personId: selfPersonId,
+      what: 'Left my phone in the coat check for the whole night.',
+      why: 'Nothing pulled me away from the music, or from them.',
+      eventId: 'past-jazz',
+      version: 1,
+    ),
+    TraitExample(
+      id: 'example-soup',
+      traitId: 'thoughtful',
+      when: _dayOf(20),
+      who: 'A neighbour',
+      what:
+          'Left soup on the doorstep the week I was ill, with a note '
+          'saying not to bother returning the pot.',
+      why: 'Noticed what I needed, and asked for nothing back.',
+      version: 1,
+    ),
+  ];
 
   // ---------------------------------------------------------------- Traits
 

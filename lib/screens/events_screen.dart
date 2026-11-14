@@ -704,6 +704,10 @@ class _EventsScreenState extends State<EventsScreen> {
     unawaited(_loadActions());
     // And the goals it changed, or made.
     unawaited(_reloadGoals());
+    // And the stories of traits it added.
+    if (TraitsScope.of(context) case final traits?) {
+      unawaited(_memory.loadExamples(traits));
+    }
   }
 
   /// How changes are made: by way of [EventsScreen.eventOutbox], or at
@@ -1568,10 +1572,11 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// The traits [event] marks, to show by their icons: those a judgment
-  /// of the user gave its top rating.
+  /// of the user gave its top rating, and those a story at it is of.
   List<Trait> _markedTraits(Event event) => markedTraits(
     _memory.traits ?? const [],
     judgments: event.properties['judgments'],
+    storyTraitIds: _memory.storyTraitIds(event.id),
   );
 
   /// Loads everyone, every location, every trait and Self's habits, for
