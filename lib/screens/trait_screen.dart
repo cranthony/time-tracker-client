@@ -11,6 +11,7 @@ import '../models/trait_scores.dart' show partKeys;
 import '../widgets/health.dart';
 import '../widgets/hotkeys.dart';
 import '../widgets/trait_icon.dart';
+import '../widgets/trait_stories.dart';
 import 'trait_breakdown.dart';
 
 /// A trait on one page, to read: its definition and status, each of its
@@ -32,7 +33,12 @@ class TraitScreen extends StatefulWidget {
     this.onEdit,
     this.onIcon,
     this.pickSvg = pickSvgFile,
+    this.stories,
   });
+
+  /// Where its stories come from and go -- examples of someone embodying
+  /// it well, listed at its foot; without it, none are shown.
+  final TraitStories? stories;
 
   final Trait trait;
 
@@ -257,6 +263,8 @@ class _TraitScreenState extends State<TraitScreen> {
                       },
                     ),
             ),
+          if (widget.stories case final stories?)
+            TraitStoriesSection(trait: _trait, stories: stories),
         ],
       ),
     );

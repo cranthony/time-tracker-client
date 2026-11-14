@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../models/event.dart';
 import '../models/trait.dart';
+import '../models/trait_example.dart';
 import '../models/trait_scores.dart';
 import '../widgets/status_message.dart';
 import '../services/plan_memory.dart';
@@ -9,7 +11,10 @@ import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/health.dart';
 import '../widgets/trait_dialog.dart';
+import '../widgets/trait_example_dialog.dart';
 import '../widgets/trait_icon.dart';
+import '../widgets/trait_stories.dart';
+import 'person_history.dart' show openHistoryEvent;
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
 
@@ -107,9 +112,76 @@ class TraitsSectionState extends State<TraitsSection> {
         actionNames: widget.actions,
         onEdit: _edit,
         onIcon: _setIcon,
+        stories: _stories,
       ),
     ),
   );
+
+  /// Its traits' stories: listed, added, edited and deleted through the
+  /// repository, and loaded again into the memory after each change, for
+  /// the events they're at.
+  TraitStories get _stories {
+    final repository = widget.repository;
+    final memory = widget.memory;
+    Future<T> changed<T>(Future<T> change) async {
+      final result = await change;
+      await memory.loadExamples(repository);
+      return result;
+    }
+
+    return TraitStories(
+      load: (traitId) => repository.examples(traitId: traitId),
+      save: (example, before) => changed(
+        before == null
+            ? repository.createExample(example)
+            : repository.updateExample(before, example.changesFrom(before)),
+      ),
+      delete: (example) => changed(repository.deleteExample(example)),
+      people: memory.people,
+      eventsOn: memory.eventStore == null ? null : _eventsOn,
+      openEvent: memory.eventStore == null ? null : _openEvent,
+    );
+  }
+
+  /// The events on [day], to link a story to one.
+  Future<List<StoryEvent>> _eventsOn(DateTime day) async {
+    final store = widget.memory.eventStore!;
+    final from = DateTime(day.year, day.month, day.day);
+    try {
+      await store.refresh(from, from.add(const Duration(hours: 12)));
+    } catch (_) {
+      // What's kept, then.
+    }
+    if (!mounted) return const [];
+    return [
+      for (final e in store.day(from) ?? const <Event>[])
+        if (e.id != null && !e.isCancelled) storyEvent(context, e),
+    ];
+  }
+
+  /// Opens the event [example] happened at, as a person's history does.
+  Future<void> _openEvent(TraitExample example) async {
+    final store = widget.memory.eventStore!;
+    var event = store.event(example.eventId!);
+    if (event == null) {
+      if (DateTime.tryParse(example.when) case final day?) {
+        try {
+          await store.refresh(day, day.add(const Duration(hours: 12)));
+        } catch (_) {
+          // Not there, then.
+        }
+        event = store.event(example.eventId!);
+      }
+    }
+    if (!mounted) return;
+    if (event == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("That event isn't there any more.")),
+      );
+      return;
+    }
+    await openHistoryEvent(context, event);
+  }
 
   /// Saves [icon] as [trait]'s, or removes it; returns it as saved, or
   /// null if it wasn't -- having said why.

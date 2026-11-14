@@ -391,6 +391,28 @@ void main() {
       });
     }
 
+    // A trait's stories, at the foot of its page: one by the user, at an
+    // event.
+    testWidgets('trait_stories ($mode)', (tester) async {
+      await render(
+        tester,
+        'trait_stories',
+        plan(),
+        scoped: true,
+        then: () async {
+          await openPane(tester, 'Traits');
+          await tester.tap(find.text('Present'));
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.text('Stories'),
+            300,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // A person's page as it opens, and scrolled to what was cancelled.
     for (final (name, scrolled) in [
       ('person', false),

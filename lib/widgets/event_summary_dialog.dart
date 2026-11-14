@@ -17,6 +17,7 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/time_zones.dart';
 import '../models/trait.dart';
+import '../models/trait_example.dart';
 import '../models/trait_icon.dart';
 import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
@@ -107,6 +108,7 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   return showDialog<SummaryOutcome<List<Event>>>(
     context: context,
     builder: (_) => _SummaryDialog<List<Event>>(
+      eventId: event.id,
       values: {
         ...event.properties,
         'summary': event.summary,
@@ -347,7 +349,12 @@ class _SummaryDialog<T> extends StatefulWidget {
     this.additions = const [],
     this.waiting = const {},
     this.repeatable = false,
+    this.eventId,
   });
+
+  /// The event's id, for the stories of traits at it; null for one
+  /// that's not an event yet.
+  final String? eventId;
 
   /// What of it waits for a change to be saved, and so can't change; see
   /// [waitsFor].
@@ -437,6 +444,19 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   /// Every trait, once they're loaded, for those it marks.
   List<Trait> _traits = const [];
 
+  /// The stories of traits at it, once they're loaded.
+  List<TraitExample> _stories = const [];
+
+  /// Its stories, from [examples]: those at it.
+  void _storiesFrom(List<TraitExample>? examples) {
+    final id = widget.eventId;
+    if (examples == null || id == null) return;
+    _stories = newestFirst([
+      for (final e in examples)
+        if (e.eventId == id) e,
+    ]);
+  }
+
   /// Each trait fact's name, by "trait id/fact id", for its logs.
   Map<String, String> _factNames = const {};
 
@@ -475,15 +495,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     // or else afresh.
     if (PlanMemoryScope.of(context) case final memory?) {
       _named(memory.people, memory.locations, memory.traits);
+      _storiesFrom(memory.traitExamples);
       await memory.prefetchNames(
         traits: traits,
         people: repository,
         habits: HabitsScope.of(context),
         onLoaded: () {
           if (mounted) {
-            setState(
-              () => _named(memory.people, memory.locations, memory.traits),
-            );
+            setState(() {
+              _named(memory.people, memory.locations, memory.traits);
+              _storiesFrom(memory.traitExamples);
+            });
           }
         },
       );
@@ -495,8 +517,14 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       final traitList = await traits?.traits(
         statuses: const ['active', 'off', 'archived'],
       );
+      final stories = widget.eventId == null
+          ? null
+          : await traits?.examples(eventIds: [widget.eventId!]);
       if (!mounted) return;
-      setState(() => _named(people, locations, traitList));
+      setState(() {
+        _named(people, locations, traitList);
+        _storiesFrom(stories);
+      });
     } catch (_) {
       // Named by id, then.
     }
@@ -2640,6 +2668,12 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     if (edited != null && mounted) _setFacts(edited);
   }
 
+  /// Who did [story], by name, and in its words.
+  String _storyWho(TraitExample story) => [
+    if (story.personId case final id?) _personNames[id] ?? id,
+    ?story.who,
+  ].join(', ');
+
   Widget _factsRow(BuildContext context) {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts'));
@@ -2648,14 +2682,17 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       for (final t in markedTraits(
         _traits,
         judgments: widget.values['judgments'],
+        storyTraitIds: [for (final s in _stories) s.traitId],
       ))
         if (TraitIcon.hasIcon(t)) t,
     ];
+    final traitsById = {for (final t in _traits) t.id: t};
     final empty =
         (facts?.notes.isEmpty ?? true) &&
         (facts?.logs.isEmpty ?? true) &&
         judgments.isEmpty &&
-        marked.isEmpty;
+        marked.isEmpty &&
+        _stories.isEmpty;
     return _row(
       context,
       icon: Icons.note_alt_outlined,
@@ -2699,6 +2736,32 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                     '${_personNames[person] ?? person} · '
                     '${_factNames[fact] ?? fact}: $log',
                     style: theme.textTheme.bodySmall,
+                  ),
+                for (final story in _stories)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (traitsById[story.traitId] case final trait?
+                            when TraitIcon.hasIcon(trait)) ...[
+                          TraitIcon(
+                            trait,
+                            size: 16,
+                            color: theme.colorScheme.onSurface,
+                            tooltip: true,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Expanded(
+                          child: Text(
+                            '${traitsById[story.traitId]?.name ?? story.traitId}'
+                            ' · ${_storyWho(story)}: ${story.what}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 if (judgments.isNotEmpty)
                   Text(

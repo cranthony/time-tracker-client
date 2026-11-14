@@ -6,6 +6,20 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.262.0
+
+- A trait keeps stories: examples of you or someone else embodying it
+  well. At the foot of its page, "Stories" lists them newest first --
+  when, who (someone in People, or someone else, in words), what they
+  did, why it's the trait, and the event it happened at, which opens --
+  and "Story" adds one; each is edited or deleted from its menu. The
+  server keeps them (`get_trait_examples` and the tools beside it); one
+  without them shows none.
+- An event a story happened at shows its trait's icon, as one a judgment
+  rated top does; its dialog lists the stories at it, each by its trait's
+  icon. They load with the traits, and again once a proposal is
+  confirmed.
+
 ## 7.261.0
 
 - A trait can have an icon: on its page, the image button's "Import .svg

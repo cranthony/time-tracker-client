@@ -2,9 +2,11 @@ import 'package:flutter/widgets.dart';
 
 import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_example.dart';
 import '../models/trait_icon.dart';
 import '../models/trait_scores.dart' show withPartIds;
 import '../outbox/write_queue.dart';
+import 'diagnostics_repository.dart' show isUnknownTool;
 import 'mcp_client.dart';
 import 'response_cache.dart';
 
@@ -39,6 +41,28 @@ abstract class TraitsRepository {
   /// Saves [defaults] whole: a level without one goes back to the plain
   /// mean (a habit layer's, to its lowest). Returns them as saved.
   Future<ScoringDefaults> setScoringDefaults(ScoringDefaults defaults);
+
+  /// The traits' examples -- stories of someone embodying one well:
+  /// [traitId]'s, or those at any of [eventIds], or every one; newest
+  /// first. A server without them has none.
+  Future<List<TraitExample>> examples({
+    String? traitId,
+    List<String>? eventIds,
+  });
+
+  /// Creates [example]; returns it as created, with its id.
+  Future<TraitExample> createExample(TraitExample example);
+
+  /// Saves [changes] ([TraitExample.changesFrom]; a cleared field is
+  /// null) to [example], as it was read -- refused if it's changed
+  /// since. Returns it as saved.
+  Future<TraitExample> updateExample(
+    TraitExample example,
+    Map<String, Object?> changes,
+  );
+
+  /// Deletes [example], as it was read.
+  Future<void> deleteExample(TraitExample example);
 }
 
 /// Reaches traits via the Time Tracker MCP server.
@@ -180,6 +204,72 @@ class McpTraitsRepository implements TraitsRepository {
         null => await _updateTrait(id, changes),
       };
 
+  static List<TraitExample> _decodeExamples(Object? result) => newestFirst([
+    for (final e in switch (result) {
+      final List list => list,
+      {'examples': final List list} => list,
+      _ => const [],
+    })
+      if (e is Map) TraitExample.fromJson(e.cast()),
+  ]);
+
+  @override
+  Future<List<TraitExample>> examples({
+    String? traitId,
+    List<String>? eventIds,
+  }) async {
+    final Object? result;
+    try {
+      result = await _client.callTool('get_trait_examples', {
+        'trait_id': ?traitId,
+        'event_ids': ?eventIds,
+      });
+    } on McpException catch (e) {
+      // A server from before them.
+      if (isUnknownTool(e) || '$e'.toLowerCase().contains('tool not found')) {
+        return const [];
+      }
+      rethrow;
+    }
+    return _decodeExamples(result);
+  }
+
+  @override
+  Future<TraitExample> createExample(TraitExample example) async {
+    final result = await _client.callTool('create_trait_example', {
+      'trait_example': {...example.toJson()..remove('id')},
+    });
+    return TraitExample.fromJson((result as Map).cast());
+  }
+
+  @override
+  Future<TraitExample> updateExample(
+    TraitExample example,
+    Map<String, Object?> changes,
+  ) async {
+    final cleared = [
+      for (final MapEntry(:key, :value) in changes.entries)
+        if (value == null && clearableExampleFields.contains(key)) key,
+    ];
+    final result = await _client.callTool('update_trait_example', {
+      'trait_example': {
+        'id': example.id,
+        for (final MapEntry(:key, :value) in changes.entries) key: ?value,
+        'version': example.version ?? 0,
+      },
+      if (cleared.isNotEmpty) 'clear_fields': cleared,
+    });
+    return TraitExample.fromJson((result as Map).cast());
+  }
+
+  @override
+  Future<void> deleteExample(TraitExample example) async {
+    await _client.callTool('delete_trait_example', {
+      'trait_example_id': example.id,
+      'if_version': example.version ?? 0,
+    });
+  }
+
   Future<Trait> _updateTrait(String id, Map<String, Object?> changes) async {
     final cleared = [
       for (final MapEntry(:key, :value) in changes.entries)
@@ -202,9 +292,79 @@ class InMemoryTraitsRepository implements TraitsRepository {
   InMemoryTraitsRepository({
     List<Trait> traits = const [],
     this.defaults = const ScoringDefaults(),
-  }) : _traits = [for (final t in traits) _withIds(t)];
+    List<TraitExample> examples = const [],
+  }) : _traits = [for (final t in traits) _withIds(t)],
+       _examples = [...examples];
 
   final List<Trait> _traits;
+  final List<TraitExample> _examples;
+  var _nextExample = 1;
+
+  @override
+  Future<List<TraitExample>> examples({
+    String? traitId,
+    List<String>? eventIds,
+  }) async => newestFirst([
+    for (final e in _examples)
+      if ((traitId == null || e.traitId == traitId) &&
+          (eventIds == null || eventIds.contains(e.eventId)))
+        e,
+  ]);
+
+  TraitExample _checked(TraitExample example) {
+    if (!_traits.any((t) => t.id == example.traitId)) {
+      throw McpException("'${example.traitId}' isn't a trait");
+    }
+    if (traitExampleProblem(example) case final problem?) {
+      throw McpException(problem);
+    }
+    return example;
+  }
+
+  int _indexOf(TraitExample example) {
+    final i = _examples.indexWhere((e) => e.id == example.id);
+    if (i < 0) throw McpException("'${example.id}' isn't a trait example");
+    if (_examples[i].version != example.version) {
+      throw McpException('The trait example changed since it was read.');
+    }
+    return i;
+  }
+
+  @override
+  Future<TraitExample> createExample(TraitExample example) async {
+    final created = _checked(
+      TraitExample.fromJson({
+        ...example.toJson(),
+        'id': 'example-${_nextExample++}',
+        'version': 1,
+      }),
+    );
+    _examples.add(created);
+    return created;
+  }
+
+  @override
+  Future<TraitExample> updateExample(
+    TraitExample example,
+    Map<String, Object?> changes,
+  ) async {
+    final i = _indexOf(example);
+    final updated = _checked(
+      TraitExample.fromJson({
+        ..._examples[i].toJson(),
+        ...changes,
+        'version': (example.version ?? 0) + 1,
+      }),
+    );
+    _examples[i] = updated;
+    return updated;
+  }
+
+  @override
+  Future<void> deleteExample(TraitExample example) async {
+    _examples.removeAt(_indexOf(example));
+  }
+
   ScoringDefaults defaults;
 
   /// [trait] with an id for each part, as the server keeps them: a new
