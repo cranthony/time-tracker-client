@@ -1203,6 +1203,76 @@ void main() {
       expect(find.textContaining('yours'), findsOneWidget);
     });
 
+    testWidgets('its details open on its notes, the tabs in review order, '
+        'stories and facts among them', (tester) async {
+      await open(
+        tester,
+        json: {
+          ...withStories(),
+          'recap': {
+            'overview': 'A quiet morning',
+            'unsure': [
+              {
+                'text': 'Whether the walk was moved',
+                'event_ids': ['walk'],
+              },
+            ],
+          },
+          'fact_summaries': [
+            {
+              'person_id': 'p1',
+              'fact': 'kind/what_matters',
+              'summary': '- Learning the cello',
+              'previous': '- Learning the piano',
+            },
+          ],
+        },
+      );
+      final titles = [
+        for (final t in [
+          'Notes (',
+          'Stories (',
+          'Claude (',
+          'Facts (',
+          'Follow-through (',
+        ])
+          tester.getTopLeft(find.textContaining(t).first).dx,
+      ];
+      expect([...titles]..sort(), titles);
+      // On the notes.
+      expect(find.textContaining('Tea at last'), findsOneWidget);
+
+      await tester.tap(find.textContaining('Stories ('));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Robin: Waited for the kettle without a word'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('At Tea'), findsOneWidget);
+      await tester.tap(find.byTooltip('Next story'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('A cashier: Counted out'), findsOneWidget);
+      await tester.tap(find.byTooltip('Drop it'));
+      await tester.pumpAndSettle();
+      expect(proposals.amends.last.toJson()['trait_examples'], [
+        {'id': 's2', 'use': 'drop'},
+      ]);
+
+      await tester.tap(find.textContaining('Facts ('));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Adds: Learning the cello'), findsOneWidget);
+      await tester.tap(find.byTooltip('Compare with what it is now'));
+      await tester.pumpAndSettle();
+      expect(find.text('- Learning the piano'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      // The chip by its window goes to what Claude's unsure of.
+      await tester.tap(find.byTooltip('Claude is unsure of 1 thing'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Whether the walk was moved'), findsOneWidget);
+    });
+
     testWidgets("one without stories doesn't offer them", (tester) async {
       await open(tester);
       expect(find.textContaining('stor'), findsNothing);
@@ -1600,6 +1670,9 @@ void main() {
           'recap': {'overview': 'A quiet morning'},
         },
       );
+      // They open on the notes: turned to Claude's recap first.
+      await tester.tap(find.text('Claude (1)'));
+      await tester.pumpAndSettle();
       expect(find.textContaining('A quiet morning'), findsOneWidget);
       final scrollable = find
           .descendant(

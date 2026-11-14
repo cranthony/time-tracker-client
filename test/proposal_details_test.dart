@@ -335,18 +335,18 @@ void main() {
           ) -
           tester.getRect(scrollable).center.dy;
 
-      // It opens on the follow-through page: turned from it and back.
-      position.jumpTo(position.maxScrollExtent);
-      await tester.pumpAndSettle();
-      await page(tester, 'Added (3)');
-      expect(outlined(tester), {'tea'});
-      expect(fromMiddle(at(9)), moreOrLessEquals(0, epsilon: 16));
-
+      // It opens on the added page: turned from it and back.
       position.jumpTo(position.maxScrollExtent);
       await tester.pumpAndSettle();
       await page(tester, 'Follow-through (1 of 2)');
       expect(outlined(tester), {'call'});
       expect(fromMiddle(at(10)), moreOrLessEquals(0, epsilon: 16));
+
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      await page(tester, 'Added (3)');
+      expect(outlined(tester), {'tea'});
+      expect(fromMiddle(at(9)), moreOrLessEquals(0, epsilon: 16));
     });
 
     testWidgets('under the bar, pages of how many cancels count against '
@@ -357,17 +357,11 @@ void main() {
       expect(find.text('Follow-through (1 of 2)'), findsOneWidget);
       expect(find.text('Added (3)'), findsOneWidget);
 
-      await tester.tap(
-        find.byTooltip(
-          'Hide Claude’s recap, notes, follow-through and additions',
-        ),
-      );
+      await tester.tap(find.byTooltip('Hide what to review'));
       await tester.pumpAndSettle();
       expect(find.text('Added (3)'), findsNothing);
       await tester.tap(
-        find.byTooltip(
-          'Show Claude’s recap, notes, follow-through and additions',
-        ),
+        find.byTooltip('Show what to review: notes, goals, additions and more'),
       );
       await tester.pumpAndSettle();
       expect(find.text('Added (3)'), findsOneWidget);
@@ -719,12 +713,20 @@ void main() {
     });
 
     group("Claude's recap", () {
+      /// Opens the page on a proposal with a recap, turned to it: the
+      /// details open on the notes, if there are any.
       Future<void> openRecap(
         WidgetTester tester, {
         Map<String, Object?> extra = const {},
-      }) => open(tester, extra: {'recap': recapJson(), ...extra});
+      }) async {
+        await open(tester, extra: {'recap': recapJson(), ...extra});
+        if (find.textContaining('Claude (').evaluate().isNotEmpty) {
+          await tester.tap(find.textContaining('Claude (').first);
+          await tester.pumpAndSettle();
+        }
+      }
 
-      testWidgets('is the page shown first, stepped through point by point, '
+      testWidgets('is stepped through point by point, '
           'the events each names outlined', (tester) async {
         await openRecap(tester);
         expect(find.text('Claude (1 unsure)'), findsOneWidget);

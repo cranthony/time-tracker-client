@@ -1018,7 +1018,18 @@ void main() {
       }
     }
 
-    // The details open on Claude's recap: to its notes.
+    // The details open on the notes: to Claude's recap.
+    Future<void> recapPage(WidgetTester tester) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(TimeSummary),
+          matching: find.textContaining('Claude ('),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    // To the notes, from wherever the details are.
     Future<void> notesPage(WidgetTester tester) async {
       await tester.tap(
         find.descendant(
@@ -1034,6 +1045,7 @@ void main() {
       (
         'events_proposal_recap',
         (tester) async {
+          await recapPage(tester);
           await tester.tap(find.textContaining('pushed work back'));
           await tester.pumpAndSettle();
         },
@@ -1041,11 +1053,9 @@ void main() {
       (
         'events_proposal_unsure',
         (tester) async {
-          // To the first thing Claude isn't sure of.
-          for (var i = 0; i < 4; i++) {
-            await tester.tap(find.byTooltip('Next point'));
-            await tester.pumpAndSettle();
-          }
+          // To the first thing Claude isn't sure of, from its chip.
+          await tester.tap(find.byTooltip('Claude is unsure of 2 things'));
+          await tester.pumpAndSettle();
         },
       ),
       ('events_proposal_extending', (tester) => extending(tester, save: false)),
@@ -1120,6 +1130,22 @@ void main() {
           await tester.pumpAndSettle();
         },
       ),
+      for (final (n, tab) in [
+        ('events_proposal_story_tab', 'Stories ('),
+        ('events_proposal_fact_tab', 'Facts ('),
+      ])
+        (
+          n,
+          (tester) async {
+            await tester.tap(
+              find.descendant(
+                of: find.byType(TimeSummary),
+                matching: find.textContaining(tab),
+              ),
+            );
+            await tester.pumpAndSettle();
+          },
+        ),
       (
         'events_proposal_stories',
         (tester) async {
