@@ -1,11 +1,16 @@
+import 'dart:convert';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
 import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_icon.dart';
 import '../models/trait_scores.dart' show partKeys;
 import '../widgets/health.dart';
 import '../widgets/hotkeys.dart';
+import '../widgets/trait_icon.dart';
 import 'trait_breakdown.dart';
 
 /// A trait on one page, to read: its definition and status, each of its
@@ -13,7 +18,8 @@ import 'trait_breakdown.dart';
 /// from -- and below them its overall health: the last day's score, the
 /// mean of everyone scored by it, and its recent trend (tapping it shows
 /// the people and parts behind it). The pencil ([onEdit]) edits it, returning it as
-/// saved.
+/// saved. Its icon, in the title, is imported from an `.svg` file or
+/// removed from the menu by it, and saved with [onIcon].
 class TraitScreen extends StatefulWidget {
   const TraitScreen({
     super.key,
@@ -24,6 +30,8 @@ class TraitScreen extends StatefulWidget {
     this.people,
     this.actionNames = const {},
     this.onEdit,
+    this.onIcon,
+    this.pickSvg = pickSvgFile,
   });
 
   final Trait trait;
@@ -45,6 +53,13 @@ class TraitScreen extends StatefulWidget {
   final Map<String?, String> actionNames;
   final Future<Trait?> Function(Trait trait)? onEdit;
 
+  /// Saves [icon] as [trait]'s, or with null removes it; returns it as
+  /// saved, or null if it wasn't. Without it, its icon can't be changed.
+  final Future<Trait?> Function(Trait trait, String? icon)? onIcon;
+
+  /// Asks for an `.svg` file and reads it: null if none was picked.
+  final Future<String?> Function() pickSvg;
+
   @override
   State<TraitScreen> createState() => _TraitScreenState();
 }
@@ -57,6 +72,38 @@ class _TraitScreenState extends State<TraitScreen> {
     if (saved != null && mounted) setState(() => _trait = saved);
   }
 
+  /// Imports an `.svg` file as its icon: drawn in one colour, its fills
+  /// and strokes made `currentColor` ([asTraitIcon]). One that can't be
+  /// an icon isn't saved, and why is said.
+  Future<void> _importIcon() async {
+    final String? picked;
+    try {
+      picked = await widget.pickSvg();
+    } catch (e) {
+      _say("Couldn't read that file: $e");
+      return;
+    }
+    if (picked == null || !mounted) return;
+    final icon = asTraitIcon(picked);
+    if (traitIconProblem(icon) case final problem?) {
+      _say(problem);
+      return;
+    }
+    await _saveIcon(icon);
+  }
+
+  Future<void> _saveIcon(String? icon) async {
+    final saved = await widget.onIcon!(_trait, icon);
+    if (saved != null && mounted) setState(() => _trait = saved);
+  }
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -65,8 +112,26 @@ class _TraitScreenState extends State<TraitScreen> {
     final days = widget.days;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_trait.name),
+        title: traitTitle(_trait),
         actions: [
+          if (widget.onIcon != null)
+            PopupMenuButton<bool>(
+              tooltip: 'Icon',
+              icon: const Icon(Icons.image_outlined),
+              onSelected: (import) => import ? _importIcon() : _saveIcon(null),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: true,
+                  child: Text(
+                    _trait.icon == null
+                        ? 'Import .svg icon'
+                        : 'Replace icon from .svg',
+                  ),
+                ),
+                if (_trait.icon != null)
+                  const PopupMenuItem(value: false, child: Text('Remove icon')),
+              ],
+            ),
           if (widget.onEdit != null)
             EditHotkey(
               child: IconButton(
@@ -284,4 +349,14 @@ class _PartCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Asks for an `.svg` file and reads it as text: null if none was picked.
+Future<String?> pickSvgFile() async {
+  final picked = await FilePicker.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: const ['svg'],
+  );
+  if (picked.isEmpty) return null;
+  return utf8.decode(await picked.first.readAsBytes(), allowMalformed: true);
 }

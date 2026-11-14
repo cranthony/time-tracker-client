@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/facts.dart';
 import '../models/person.dart';
 import '../models/trait.dart';
+import '../widgets/trait_icon.dart';
 
 /// Shows [trait]'s daily scores, [days], newest first, each the mean
 /// across the people rated by it; tapping a person's score shows the parts
@@ -26,8 +27,8 @@ Future<void> showTraitHistory(
       controller: controller,
       children: [
         ListTile(
-          title: Text(
-            trait.name,
+          title: traitTitle(
+            trait,
             style: Theme.of(context).textTheme.titleLarge,
           ),
           subtitle: trait.definition == null ? null : Text(trait.definition!),
@@ -52,6 +53,7 @@ Future<void> showTraitHistory(
                     showTraitParts(
                       context,
                       score,
+                      trait: trait,
                       title:
                           '${personNames[personId] ?? personId} · ${day.day}',
                       events: events?.call(score) ?? const {},
@@ -78,6 +80,7 @@ Future<void> showTraitHistory(
 Future<void> showTraitParts(
   BuildContext context,
   TraitScore score, {
+  Trait? trait,
   String? title,
   Map<String, Map<String, dynamic>> events = const {},
   Map<String?, String> personNames = const {},
@@ -100,10 +103,17 @@ Future<void> showTraitParts(
           controller: controller,
           padding: const EdgeInsets.symmetric(horizontal: 16),
           children: [
-            Text(
-              '${score.name}: ${score.score ?? '–'}',
-              style: theme.textTheme.titleLarge,
-            ),
+            switch (trait) {
+              final trait? => traitTitle(
+                trait,
+                text: '${score.name}: ${score.score ?? '–'}',
+                style: theme.textTheme.titleLarge,
+              ),
+              null => Text(
+                '${score.name}: ${score.score ?? '–'}',
+                style: theme.textTheme.titleLarge,
+              ),
+            },
             if (title != null) Text(title, style: theme.textTheme.bodySmall),
             if (facts.isNotEmpty) ...[
               Padding(

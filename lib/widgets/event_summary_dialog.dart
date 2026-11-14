@@ -17,6 +17,7 @@ import '../models/recurrence.dart';
 import '../models/repeat.dart';
 import '../models/time_zones.dart';
 import '../models/trait.dart';
+import '../models/trait_icon.dart';
 import '../services/goals_repository.dart';
 import '../services/habits_repository.dart';
 import '../services/mcp_client.dart';
@@ -45,6 +46,7 @@ import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
 import 'share_dialog.dart';
 import 'time_zone_picker.dart';
+import 'trait_icon.dart';
 
 /// What a summary dialog closed with, when it wasn't just closed.
 sealed class SummaryOutcome<T> {
@@ -432,6 +434,9 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   Map<String, String> _locationMaps = const {};
   Map<String?, String> _traitNames = const {};
 
+  /// Every trait, once they're loaded, for those it marks.
+  List<Trait> _traits = const [];
+
   /// Each trait fact's name, by "trait id/fact id", for its logs.
   Map<String, String> _factNames = const {};
 
@@ -522,6 +527,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
       }
     }
     if (traits != null) {
+      _traits = traits;
       _traitNames = {for (final t in traits) t.id: t.name};
       _factNames = {
         for (final t in traits)
@@ -2638,10 +2644,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
     final theme = Theme.of(context);
     final facts = Facts.fromJson(_value('facts'));
     final judgments = judgmentsFromJson(widget.values['judgments']);
+    final marked = [
+      for (final t in markedTraits(
+        _traits,
+        judgments: widget.values['judgments'],
+      ))
+        if (TraitIcon.hasIcon(t)) t,
+    ];
     final empty =
         (facts?.notes.isEmpty ?? true) &&
         (facts?.logs.isEmpty ?? true) &&
-        judgments.isEmpty;
+        judgments.isEmpty &&
+        marked.isEmpty;
     return _row(
       context,
       icon: Icons.note_alt_outlined,
@@ -2659,6 +2673,18 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (marked.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: [
+                        for (final trait in marked)
+                          traitTitle(trait, style: theme.textTheme.bodyMedium),
+                      ],
+                    ),
+                  ),
                 for (final MapEntry(:key, :value)
                     in facts?.notes.entries ??
                         const <MapEntry<String, String>>[])

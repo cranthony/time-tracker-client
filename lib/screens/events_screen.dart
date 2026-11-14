@@ -18,6 +18,7 @@ import '../models/note.dart';
 import '../models/proposal.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
+import '../models/trait_icon.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/legacy_writes.dart' show actionWriteFields;
 import '../outbox/note_writes.dart';
@@ -1565,6 +1566,13 @@ class _EventsScreenState extends State<EventsScreen> {
     }
     setState(() {});
   }
+
+  /// The traits [event] marks, to show by their icons: those a judgment
+  /// of the user gave its top rating.
+  List<Trait> _markedTraits(Event event) => markedTraits(
+    _memory.traits ?? const [],
+    judgments: event.properties['judgments'],
+  );
 
   /// Loads everyone, every location, every trait and Self's habits, for
   /// an event's dialogs to name at once. Best effort.
@@ -6695,6 +6703,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 locationNames: _locationNames,
                 goalNames: _goalNames,
                 goalColors: _goalColors,
+                markedTraits: _markedTraits,
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,

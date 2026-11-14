@@ -678,6 +678,34 @@ void main() {
       await render(tester, 'events', events());
     });
 
+    // A day's events, each with the icons of the traits a judgment of
+    // the user rated top, after its summary; and one opened, naming them.
+    for (final (name, open) in [
+      ('events_trait_icons', false),
+      ('events_trait_dialog', true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          events(),
+          scoped: true,
+          then: () async {
+            for (var i = 0; i < 4; i++) {
+              await tester.tap(find.byTooltip('Previous day'));
+              await tester.pumpAndSettle();
+            }
+            await tester.ensureVisible(find.text('Cook dumplings').first);
+            await tester.pumpAndSettle();
+            if (open) {
+              await tester.tap(find.text('Cook dumplings').first);
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
     // Writing a note at a time: the notepad button by "+"; the cursor it
     // puts up, mid-view; and ✓'s New note sheet, at the cursor's time.
     for (final (name, step) in [

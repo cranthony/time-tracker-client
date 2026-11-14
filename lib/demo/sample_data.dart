@@ -642,6 +642,7 @@ class SampleData {
     Trait(
       id: 'adventurous',
       name: 'Adventurous',
+      icon: _adventurousIcon,
       definition: 'Try new things and new places, together.',
       parts: [
         {
@@ -660,6 +661,7 @@ class SampleData {
     Trait(
       id: 'thoughtful',
       name: 'Thoughtful',
+      icon: _thoughtfulIcon,
       definition: 'Remember what matters to them, and act on it.',
       facts: [
         TraitFact(
@@ -694,6 +696,7 @@ class SampleData {
     Trait(
       id: 'creative',
       name: 'Creative',
+      icon: _creativeIcon,
       definition: 'Make things, alone and together.',
       parts: [
         {
@@ -712,6 +715,7 @@ class SampleData {
     Trait(
       id: 'present',
       name: 'Present',
+      icon: _presentIcon,
       definition: 'Give them my full attention.',
       parts: [
         {
@@ -731,6 +735,7 @@ class SampleData {
     Trait(
       id: 'reliable',
       name: 'Reliable',
+      icon: _reliableIcon,
       definition: 'Keep in touch, and do what I said I would.',
       parts: [
         {'kind': 'count', 'action': 'social', 'target': 1, 'interval_days': 7},
@@ -740,6 +745,7 @@ class SampleData {
     Trait(
       id: 'generous',
       name: 'Generous',
+      icon: _generousIcon,
       status: 'off',
       definition: 'Make an effort for them beyond showing up.',
       parts: [
@@ -2135,3 +2141,34 @@ class _PastEvent {
     notes: notes,
   );
 }
+
+/// The traits' icons: simple line drawings, in one colour.
+const _adventurousIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor"/></svg>';
+
+const _thoughtfulIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></svg>';
+
+const _creativeIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4l-5.3 3 1.2-6-4.5-4.1 6-.7z"/></svg>';
+
+const _presentIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+
+const _reliableIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>';
+
+const _generousIcon =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round"><path d="M3 8h18v4H3zM5 12v9h14v-9M12 8v13M12 8C10.5 4 6 4 7 7c.5 1 5 1 5 1zm0 0c1.5-4 6-4 5-1-.5 1-5 1-5 1z"/></svg>';

@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/scoring.dart';
 import '../models/trait.dart';
+import '../models/trait_icon.dart';
 import '../models/trait_scores.dart' show withPartIds;
 import '../outbox/write_queue.dart';
 import 'mcp_client.dart';
@@ -262,6 +263,11 @@ class InMemoryTraitsRepository implements TraitsRepository {
   Future<Trait> updateTrait(String id, Map<String, Object?> changes) async {
     final i = _traits.indexWhere((t) => t.id == id);
     if (i < 0) throw McpException("'$id' isn't a trait");
+    if (changes['icon'] case final String icon) {
+      if (traitIconProblem(icon) case final problem?) {
+        throw McpException(problem);
+      }
+    }
     final updated = _withIds(
       Trait.fromJson({..._traits[i].toJson(), ...changes}),
       fresh: true,
