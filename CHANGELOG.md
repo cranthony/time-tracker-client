@@ -6,6 +6,21 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.261.0
+
+- A trait can have an icon: on its page, the image button's "Import .svg
+  icon" makes an SVG file its icon -- drawn in one colour, so its fills
+  and strokes are made `currentColor`, and anything the server won't keep
+  (scripts, styles, pictures, links) is left out -- and "Remove icon"
+  takes it off. One that still can't be an icon isn't saved, and why is
+  said. The server keeps it (`icon` on `update_trait`).
+- A trait's icon shows beside its name: in the traits list, on its page,
+  in its history and breakdown, in a person's trait scores, and where a
+  person's or habit's traits are picked.
+- An event shows the icons of the traits it marks -- those a judgment of
+  you gave its top rating -- after its title on Events, where there's
+  room beside it, and in its dialog, under what happened.
+
 ## 7.260.1
 
 - On Events, a goal closed after its deadline -- an overdue one marked

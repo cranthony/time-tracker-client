@@ -17,6 +17,7 @@ import '../services/traits_repository.dart';
 import '../widgets/durations.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/fact_prompts_dialog.dart';
+import '../widgets/trait_icon.dart';
 import '../widgets/goal_editor.dart' show deadlineLabel;
 import '../widgets/health.dart';
 import '../widgets/relationship_habits.dart';
@@ -682,9 +683,17 @@ List<Widget> traitScoreTiles(
     ),
     for (final score in rating.traits) ...[
       ListTile(
-        title: Text(
-          score.weight == 1 ? score.name : '${score.name} ×${score.weight}',
-        ),
+        title: switch (traitList[score.traitId]) {
+          final trait? => traitTitle(
+            trait,
+            text: score.weight == 1
+                ? score.name
+                : '${score.name} ×${score.weight}',
+          ),
+          null => Text(
+            score.weight == 1 ? score.name : '${score.name} ×${score.weight}',
+          ),
+        },
         subtitle: Text(
           [
             for (final part in score.parts)
@@ -709,6 +718,7 @@ List<Widget> traitScoreTiles(
         onTap: () => showTraitParts(
           context,
           score,
+          trait: traitList[score.traitId],
           labels: [for (final part in score.parts) label(part)],
           title: rating.day,
           events: scores.eventsBehind(score),

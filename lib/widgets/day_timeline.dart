@@ -13,10 +13,12 @@ import '../models/event.dart';
 import '../models/google_calendar.dart';
 import '../models/person.dart' show selfPersonId;
 import '../models/plan_action.dart';
+import '../models/trait.dart';
 import '../models/weather.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'other_events.dart';
+import 'trait_icon.dart';
 import 'weather_style.dart';
 
 /// The zoom levels a [DayTimeline] can be shown at, in logical pixels
@@ -95,6 +97,11 @@ const _chipPadding = 4.0;
 
 /// How big an event's goal icons are, by its chips.
 const _goalIconSize = 14.0;
+
+/// How big the icons of the traits an event marks are, after its
+/// summary, and the space between them.
+const _traitIconSize = 14.0;
+const _traitIconGap = 3.0;
 
 /// The size of a commute's icon before its summary, and the space after.
 const _commuteIconSize = 14.0;
@@ -563,9 +570,15 @@ class DayTimeline extends StatelessWidget {
     this.temperaturesFrom,
     this.temperatures,
     this.circadian = const [],
+    this.markedTraits,
   });
 
   final List<Event> events;
+
+  /// The traits [event] marks, each shown by its icon after its summary
+  /// where there's room ([markedTraits] in models/trait_icon.dart); null
+  /// for none.
+  final List<Trait> Function(Event event)? markedTraits;
 
   /// The windows either side of the user's temperature minimum to tint,
   /// each with its minimum.
@@ -953,6 +966,12 @@ class DayTimeline extends StatelessWidget {
                               actions: actions,
                               goalNames: goalNames,
                               goalColors: goalColors,
+                              traits: [
+                                for (final t
+                                    in markedTraits?.call(placement.event) ??
+                                        const <Trait>[])
+                                  if (TraitIcon.hasIcon(t)) t,
+                              ],
                               details: _details(placement.event),
                               styles: styles,
                               onTap: onTap == null
@@ -962,15 +981,13 @@ class DayTimeline extends StatelessWidget {
                                   ? null
                                   : () => onLongPress!(placement.event),
                               faded:
-                                  faded != null &&
-                                  placement.event.id == faded,
+                                  faded != null && placement.event.id == faded,
                               mark: marks[placement.event.id],
                               timeLabel: (t) =>
-                                  MaterialLocalizations.of(
-                                    context,
-                                  ).formatTimeOfDay(
-                                    TimeOfDay.fromDateTime(t.toLocal()),
-                                  ),
+                                  MaterialLocalizations.of(context)
+                                      .formatTimeOfDay(
+                                        TimeOfDay.fromDateTime(t.toLocal()),
+                                      ),
                             ),
                           ),
                         if (googleOnTop)
@@ -1982,6 +1999,7 @@ class _EventCard extends StatelessWidget {
     required this.actions,
     this.goalNames = const {},
     this.goalColors = const {},
+    this.traits = const [],
     required this.details,
     required this.styles,
     required this.onTap,
@@ -2010,6 +2028,10 @@ class _EventCard extends StatelessWidget {
 
   /// The colors goals were given, by id.
   final Map<String, Color> goalColors;
+
+  /// The traits it marks, each with an icon, shown after its summary as
+  /// many as there's room for.
+  final List<Trait> traits;
 
   /// The names of its locations, of the people with the user, and of
   /// those it was for, listed down its right where there's room.
@@ -2061,6 +2083,7 @@ class _EventCard extends StatelessWidget {
           '$summary, ${timeLabel(event.start)} to ${timeLabel(event.end)}'
           '${event.isCommute ? ', commute' : ''}'
           '${cancelled ? ', cancelled' : ''}'
+          '${traits.isEmpty ? '' : ', ${[for (final t in traits) t.name].join(', ')}'}'
           '${switch (mark) {
             null => '',
             EventMark(:final label?, :final changed) => '. To confirm: $label'
@@ -2220,6 +2243,15 @@ class _EventCard extends StatelessWidget {
                           goals: goals.length,
                           duration: duration,
                         );
+                        final traitIcons = _traitIconsThatFit(
+                          context,
+                          constraints.maxWidth,
+                          summary: summary,
+                          summaryStyle: summaryStyle,
+                          locationWidth: located == null ? 0 : locationWidth,
+                          goalStack: goalStack,
+                          duration: duration,
+                        );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -2258,6 +2290,18 @@ class _EventCard extends StatelessWidget {
                                     style: summaryStyle,
                                   ),
                                 ),
+                                if (traitIcons > 0)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      left: _chipGap,
+                                    ),
+                                    child: TraitIconRow(
+                                      traits.take(traitIcons).toList(),
+                                      size: _traitIconSize,
+                                      gap: _traitIconGap,
+                                      color: contrastingColor(fill),
+                                    ),
+                                  ),
                                 if (located != null)
                                   SizedBox(
                                     width: locationWidth,
@@ -2550,6 +2594,48 @@ extension on _EventCard {
     return withGoals >= wanted
         ? (locationWidth: withGoals, goalStack: true)
         : (locationWidth: fit(room), goalStack: false);
+  }
+
+  /// How many of its [traits]' icons fit on its summary's line, [width]
+  /// wide, once its summary has whatever it needs of half the line, and
+  /// everything else on the line -- its mark, a commute's icon, its
+  /// location ([locationWidth] of it), its diamonds, its duration and
+  /// its goals' stack, if it's shown -- has its room. Those that don't
+  /// fit aren't shown, from the last.
+  int _traitIconsThatFit(
+    BuildContext context,
+    double width, {
+    required String summary,
+    required TextStyle? summaryStyle,
+    required double locationWidth,
+    required bool goalStack,
+    required String? duration,
+  }) {
+    if (traits.isEmpty || !width.isFinite) return 0;
+    final event = placement.event;
+    final ids = event.actionIds;
+    final goals = event.goals.length;
+    final room =
+        width -
+        _markWidth -
+        (event.isCommute ? _commuteIconSize + _commuteIconGap : 0) -
+        locationWidth -
+        (ids.isEmpty ? 0 : _DiamondStack.widthOf(ids.length)) -
+        (duration == null
+            ? 0
+            : _chipGap +
+                  2 * _chipPadding +
+                  2 +
+                  _widthOf(context, duration, styles.chip)) -
+        (goalStack && goals > 0
+            ? _chipGap +
+                  _goalIconSize * GoalPainter.widthOf(math.min(goals, 2)) / 24
+            : 0);
+    final summaryWidth = _widthOf(context, summary, summaryStyle);
+    final left = room - math.min(summaryWidth, room / 2) - _chipGap;
+    return ((left + _traitIconGap) / (_traitIconSize + _traitIconGap))
+        .floor()
+        .clamp(0, traits.length);
   }
 
   /// How many of its [count] lines of actions and goals, or of details,

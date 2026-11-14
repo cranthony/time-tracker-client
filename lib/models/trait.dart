@@ -17,6 +17,7 @@ class Trait {
     this.scoring,
     this.facts = const [],
     this.problems = const [],
+    this.icon,
   });
 
   /// Made from its first name when it's created; it never changes.
@@ -43,6 +44,11 @@ class Trait {
   /// its bad parts aren't rated.
   final List<String> problems;
 
+  /// Its icon: SVG markup in one colour, every fill and stroke
+  /// `currentColor` or `none`, tinted where it's shown ([TraitIcon]);
+  /// null for none. See [traitIconProblem].
+  final String? icon;
+
   factory Trait.fromJson(Map<String, dynamic> json) => Trait(
     id: json['id'] as String?,
     name: json['name'] as String? ?? '',
@@ -58,6 +64,10 @@ class Trait {
         if (fact is Map) TraitFact.fromJson(fact.cast()),
     ],
     problems: [for (final p in json['problems'] as List? ?? const []) '$p'],
+    icon: switch (json['icon']) {
+      final String svg when svg.trim().isNotEmpty => svg,
+      _ => null,
+    },
   );
 
   /// As `create_trait` and `update_trait` take it.
@@ -69,6 +79,7 @@ class Trait {
     'parts': parts,
     'scoring': ?scoring?.toJson(),
     'facts': [for (final fact in facts) fact.toJson()],
+    'icon': ?icon,
   };
 }
 

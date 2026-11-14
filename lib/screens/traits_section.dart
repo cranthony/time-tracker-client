@@ -9,6 +9,7 @@ import '../services/traits_repository.dart';
 import '../widgets/error_sheet.dart';
 import '../widgets/health.dart';
 import '../widgets/trait_dialog.dart';
+import '../widgets/trait_icon.dart';
 import 'trait_breakdown.dart';
 import 'trait_screen.dart';
 
@@ -105,9 +106,25 @@ class TraitsSectionState extends State<TraitsSection> {
         people: widget.memory.people,
         actionNames: widget.actions,
         onEdit: _edit,
+        onIcon: _setIcon,
       ),
     ),
   );
+
+  /// Saves [icon] as [trait]'s, or removes it; returns it as saved, or
+  /// null if it wasn't -- having said why.
+  Future<Trait?> _setIcon(Trait trait, String? icon) async {
+    Trait? saved;
+    await runOrShowError(
+      context,
+      title: "Couldn't save ${trait.name}'s icon",
+      action: () async {
+        saved = await widget.repository.updateTrait(trait.id!, {'icon': icon});
+        await reload();
+      },
+    );
+    return saved;
+  }
 
   /// Creates a trait (with no [trait]) or edits one; returns it as
   /// saved, or null if nothing was.
@@ -212,8 +229,8 @@ class TraitsSectionState extends State<TraitsSection> {
     final others = trait.parts.length - judgments;
     return ListTile(
       onTap: () => _open(trait),
-      title: Text(
-        trait.name,
+      title: traitTitle(
+        trait,
         style: muted ? TextStyle(color: theme.hintColor) : null,
       ),
       subtitle: Column(

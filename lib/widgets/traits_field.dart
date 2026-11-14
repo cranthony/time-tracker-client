@@ -7,6 +7,7 @@ import '../models/trait_scores.dart' show partKeys;
 import '../services/plan_memory.dart';
 import 'parts_editor.dart';
 import 'scoring_editor.dart';
+import 'trait_icon.dart';
 
 /// How the traits combine into their score -- a person's, or a habit's
 /// -- and, below it, which of [traits] apply: every active one, or those
@@ -206,7 +207,7 @@ class _TraitsFieldState extends State<TraitsField> {
                       onChanged: (_) =>
                           _changed(() => _select!.remove(trait.id)),
                     ),
-              title: Text(trait.name),
+              title: traitTitle(trait),
               subtitle: Text(
                 [
                   switch (_parts[trait.id]) {
@@ -248,7 +249,10 @@ class _TraitsFieldState extends State<TraitsField> {
                 value: false,
                 onChanged: (_) => _changed(() => _select!.add(trait.id!)),
               ),
-              title: Text(trait.name, style: TextStyle(color: theme.hintColor)),
+              title: traitTitle(
+                trait,
+                style: TextStyle(color: theme.hintColor),
+              ),
             ),
       ],
     );
