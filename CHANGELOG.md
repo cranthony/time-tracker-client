@@ -6,6 +6,18 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.264.0
+
+- A proposal's details are in review order: Notes, Goals, Added,
+  Stories, Claude, Facts, then Follow-through -- and open on its notes.
+- The stories it adds, and the trait fact summaries it rewrites, are
+  pages of their own, stepped through as the others are: a story by its
+  trait's icon, who did it and what, the event it's at, changed or
+  dropped from its buttons; a fact by whose and which, and what it adds
+  -- tapped, it's shown whole beside what it is now.
+- A chip by the proposal's window counts what Claude is unsure of, and
+  goes to the first.
+
 ## 7.263.0
 
 - A compaction proposal shows the stories of traits done well it adds

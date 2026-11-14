@@ -136,12 +136,17 @@ class ProposalBar extends StatelessWidget {
     this.onHide,
     this.onFacts,
     this.onStories,
+    this.onUnsure,
     this.onRevisited,
   });
 
   final Proposal proposal;
   final VoidCallback? onFacts;
   final VoidCallback? onStories;
+
+  /// Goes to the first thing Claude's unsure of, which a chip by its
+  /// window counts, while there's any.
+  final VoidCallback? onUnsure;
 
   /// Goes to the first of the settled events it revisits for historical notes,
   /// which a line under it names.
@@ -264,11 +269,27 @@ class ProposalBar extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            window,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.titleSmall,
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  window,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.titleSmall,
+                                ),
+                              ),
+                              if ((proposal.recap?.unsure.length ?? 0)
+                                  case final n
+                                  when n > 0 && onUnsure != null && !hidden)
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: _UnsureChip(
+                                    count: n,
+                                    onTap: busy ? null : onUnsure,
+                                  ),
+                                ),
+                            ],
                           ),
                           Text.rich(
                             TextSpan(
@@ -2541,6 +2562,10 @@ class ProposalDetails extends StatelessWidget {
     this.addCount = 0,
     this.goals,
     this.goalCount = 0,
+    this.stories,
+    this.storyCount = 0,
+    this.facts,
+    this.factCount = 0,
     this.collapsed = false,
     this.onCollapsed,
     this.initialPage = 0,
@@ -2566,6 +2591,13 @@ class ProposalDetails extends StatelessWidget {
   /// The changes it makes to goals there are, one at a time.
   final Widget? goals;
   final int goalCount;
+
+  /// The stories of traits done well it adds, and the trait fact
+  /// summaries it rewrites, one at a time.
+  final Widget? stories;
+  final int storyCount;
+  final Widget? facts;
+  final int factCount;
   final bool collapsed;
   final ValueChanged<bool>? onCollapsed;
 
@@ -2575,11 +2607,18 @@ class ProposalDetails extends StatelessWidget {
 
   /// The pages it has, in order.
   List<ProposalDetailPage> get pages => [
-    if (recap != null) ProposalDetailPage.claude,
-    if (notes != null) ProposalDetailPage.notes,
-    if (cancels != null) ProposalDetailPage.followThrough,
-    if (adds != null) ProposalDetailPage.added,
-    if (goals != null) ProposalDetailPage.goals,
+    for (final page in ProposalDetailPage.values)
+      if (switch (page) {
+            ProposalDetailPage.claude => recap,
+            ProposalDetailPage.notes => notes,
+            ProposalDetailPage.followThrough => cancels,
+            ProposalDetailPage.added => adds,
+            ProposalDetailPage.goals => goals,
+            ProposalDetailPage.stories => stories,
+            ProposalDetailPage.facts => facts,
+          } !=
+          null)
+        page,
   ];
 
   @override
@@ -2594,8 +2633,8 @@ class ProposalDetails extends StatelessWidget {
         reviewColors(colors).tint,
         colors.surfaceContainerLow,
       ),
-      showLabel: 'Show Claude’s recap, notes, follow-through and additions',
-      hideLabel: 'Hide Claude’s recap, notes, follow-through and additions',
+      showLabel: 'Show what to review: notes, goals, additions and more',
+      hideLabel: 'Hide what to review',
       collapsed: collapsed,
       onCollapsed: onCollapsed,
       initialPage: initialPage.clamp(0, pages.length - 1),
@@ -2615,6 +2654,8 @@ class ProposalDetails extends StatelessWidget {
               'Follow-through ($counting of $cancelCount)',
             ProposalDetailPage.added => 'Added ($addCount)',
             ProposalDetailPage.goals => 'Goals ($goalCount)',
+            ProposalDetailPage.stories => 'Stories ($storyCount)',
+            ProposalDetailPage.facts => 'Facts ($factCount)',
           },
       ],
       pages: [
@@ -2625,6 +2666,8 @@ class ProposalDetails extends StatelessWidget {
             ProposalDetailPage.followThrough => cancels!,
             ProposalDetailPage.added => adds!,
             ProposalDetailPage.goals => goals!,
+            ProposalDetailPage.stories => stories!,
+            ProposalDetailPage.facts => facts!,
           },
       ],
     );
@@ -2632,7 +2675,17 @@ class ProposalDetails extends StatelessWidget {
 }
 
 /// A page of [ProposalDetails].
-enum ProposalDetailPage { claude, notes, followThrough, added, goals }
+/// The pages of [ProposalDetails], in the order they're shown: what's
+/// most often checked first, follow-through last.
+enum ProposalDetailPage {
+  notes,
+  goals,
+  added,
+  stories,
+  claude,
+  facts,
+  followThrough,
+}
 
 /// What the user said a note is for, from [showNoteUseSheet].
 sealed class NoteUseChoice {
@@ -2952,13 +3005,15 @@ class _CancelledDialogState extends State<_CancelledDialog> {
 
 /// Shows the trait fact summaries [proposal] rewrites: each person's
 /// (named from [personNames]) fact (from [factNames], by "trait id/fact
-/// id"), the summary as it would be, and as it is now. They're applied
-/// with it; to change one, leave Claude a note.
+/// id"), the summary as it would be, and as it is now -- or, with
+/// [only], just that one. They're applied with it; to change one, leave
+/// Claude a note.
 Future<void> showFactSummariesSheet(
   BuildContext context,
   Proposal proposal, {
   Map<String, String> personNames = const {},
   Map<String, String> factNames = const {},
+  ProposedSummary? only,
 }) => showModalBottomSheet<void>(
   context: context,
   isScrollControlled: true,
@@ -2982,7 +3037,8 @@ Future<void> showFactSummariesSheet(
             'change log it. To change one, leave Claude a note.',
             style: muted,
           ),
-          for (final s in proposal.factSummaries)
+          for (final s
+              in [?only] + (only == null ? proposal.factSummaries : []))
             Card.outlined(
               margin: const EdgeInsets.only(top: 12),
               child: Padding(
@@ -3010,3 +3066,210 @@ Future<void> showFactSummariesSheet(
     );
   },
 );
+
+/// The chip by a proposal's window counting the things Claude's unsure
+/// of: tapped, it goes to the first.
+class _UnsureChip extends StatelessWidget {
+  const _UnsureChip({required this.count, this.onTap});
+
+  final int count;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: 'Claude is unsure of $count thing${count == 1 ? '' : 's'}',
+      child: Material(
+        color: colors.tertiaryContainer,
+        shape: const StadiumBorder(),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.help_outline,
+                  size: 14,
+                  color: colors.onTertiaryContainer,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '$count',
+                  style: Theme.of(context).textTheme.labelSmall
+                      ?.copyWith(color: colors.onTertiaryContainer),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A story of a trait done well the proposal adds -- the [index]th of
+/// [count]: its [trait]'s name, by its [icon] if it has one, who did it
+/// and what, and the event it's at, if any. Tapping it, or its pencil,
+/// calls [onChange]; its other button, [onDrop]; with buttons to go to
+/// the one before it ([onPrevious]) and after it ([onNext]).
+class ProposalStoryStrip extends StatelessWidget {
+  const ProposalStoryStrip({
+    super.key,
+    required this.trait,
+    required this.who,
+    required this.what,
+    required this.index,
+    required this.count,
+    this.icon,
+    this.event,
+    this.yours = false,
+    this.onChange,
+    this.onDrop,
+    this.onPrevious,
+    this.onNext,
+  });
+
+  final String trait;
+  final Widget? icon;
+  final String who;
+  final String what;
+  final String? event;
+  final bool yours;
+  final int index;
+  final int count;
+  final VoidCallback? onChange;
+  final VoidCallback? onDrop;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) => _DetailRow(
+    badge: Icons.auto_stories_outlined,
+    what: 'story',
+    index: index,
+    count: count,
+    title: TextSpan(
+      children: [
+        if (icon case final icon?)
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: icon,
+            ),
+          ),
+        TextSpan(
+          text: '$trait  ',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        TextSpan(text: '$who: $what'),
+      ],
+    ),
+    titleLines: 3,
+    says: [
+      if (event case final event?) 'At $event',
+      if (yours) 'yours',
+    ].join(' · '),
+    actions: [
+      if (onChange != null)
+        IconButton(
+          tooltip: 'Change it',
+          visualDensity: VisualDensity.compact,
+          onPressed: onChange,
+          icon: const Icon(Icons.edit_outlined),
+        ),
+      if (onDrop != null)
+        IconButton(
+          tooltip: 'Drop it',
+          visualDensity: VisualDensity.compact,
+          onPressed: onDrop,
+          icon: const Icon(Icons.block),
+        ),
+    ],
+    onPrevious: onPrevious,
+    onNext: onNext,
+    onTap: onChange,
+  );
+}
+
+/// A trait fact summary the proposal rewrites -- the [index]th of
+/// [count]: whose ([person]) and which ([fact]), and what changes in it
+/// ([change]: what's new in it, cut short -- see [factChange]). Tapping it calls [onOpen],
+/// to read it whole beside what it is now; with buttons to go to the one
+/// before it ([onPrevious]) and after it ([onNext]).
+class ProposalFactStrip extends StatelessWidget {
+  const ProposalFactStrip({
+    super.key,
+    required this.person,
+    required this.fact,
+    required this.change,
+    required this.index,
+    required this.count,
+    this.isNew = false,
+    this.onOpen,
+    this.onPrevious,
+    this.onNext,
+  });
+
+  final String person;
+  final String fact;
+  final String change;
+
+  /// Whether it's their first summary of it.
+  final bool isNew;
+  final int index;
+  final int count;
+  final VoidCallback? onOpen;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) => _DetailRow(
+    badge: Icons.psychology_outlined,
+    what: 'fact',
+    index: index,
+    count: count,
+    title: TextSpan(
+      children: [
+        TextSpan(
+          text: '$person · $fact  ',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        TextSpan(text: change),
+      ],
+    ),
+    titleLines: 3,
+    says: isNew ? 'Their first summary of it' : 'Tap to compare with now',
+    actions: [
+      if (onOpen != null)
+        IconButton(
+          tooltip: 'Compare with what it is now',
+          visualDensity: VisualDensity.compact,
+          onPressed: onOpen,
+          icon: const Icon(Icons.compare_arrows),
+        ),
+    ],
+    onPrevious: onPrevious,
+    onNext: onNext,
+    onTap: onOpen,
+  );
+}
+
+/// What's new in [summary] since [previous]: its lines that weren't
+/// there, as "Adds: ..."; or, with none -- reworded, or cut -- all of it.
+String factChange(String summary, String? previous) {
+  if (summary.trim().isEmpty) return '(empty)';
+  if (previous == null) return summary;
+  String bare(String line) =>
+      line.trim().replaceFirst(RegExp(r'^[-*•]\s*'), '');
+  final before = {for (final l in previous.split('\n')) bare(l)};
+  final added = [
+    for (final l in summary.split('\n'))
+      if (bare(l).isNotEmpty && !before.contains(bare(l))) bare(l),
+  ];
+  return added.isEmpty ? summary : 'Adds: ${added.join('; ')}';
+}

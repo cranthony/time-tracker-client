@@ -1965,6 +1965,20 @@ class SampleData {
         ],
       },
       'recap_revision': 3,
+      // A trait fact summary the notes show something new of.
+      'fact_summaries': [
+        {
+          'person_id': 'sam',
+          'fact': 'thoughtful/what_matters',
+          'summary':
+              '- Training for a half marathon in the spring\n'
+              '- Nervous about the new team at work\n'
+              '- Wants to learn to make dumplings properly',
+          'previous':
+              '- Training for a half marathon in the spring\n'
+              '- Nervous about the new team at work',
+        },
+      ],
       // Stories of traits done well, from the notes: made once it's
       // confirmed.
       'trait_examples': [

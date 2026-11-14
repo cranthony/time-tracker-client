@@ -83,6 +83,7 @@ import '../widgets/proposal_problem_status.dart';
 import '../widgets/proposal_review.dart';
 import '../widgets/proposed_stories_sheet.dart';
 import '../widgets/trait_example_dialog.dart';
+import '../widgets/trait_icon.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
 import '../widgets/status_message.dart';
@@ -757,20 +758,89 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Which page of the proposal's details is shown under its bar:
   /// Claude's recap of it -- first, while it has one -- its notes, its
   /// cancels, or what it adds.
-  ProposalDetailPage _detailPage = ProposalDetailPage.claude;
+  ProposalDetailPage _detailPage = ProposalDetailPage.notes;
+
+  /// The pages of the proposal's details with anything on them, in
+  /// order.
+  List<ProposalDetailPage> get _detailPages => [
+    for (final page in ProposalDetailPage.values)
+      if (switch (page) {
+        ProposalDetailPage.claude => _recapPoint != null,
+        ProposalDetailPage.notes => _note != null,
+        ProposalDetailPage.followThrough => _cancel != null,
+        ProposalDetailPage.added => _addition != null,
+        ProposalDetailPage.goals => _goalInReview != null,
+        ProposalDetailPage.stories => _story != null,
+        ProposalDetailPage.facts => _fact != null,
+      })
+        page,
+  ];
 
   /// The page of the proposal's details shown: [_detailPage], if it has
   /// anything on it, or else the first that has.
   ProposalDetailPage? get _shownPage {
-    final pages = [
-      if (_recapPoint != null) ProposalDetailPage.claude,
-      if (_note != null) ProposalDetailPage.notes,
-      if (_cancel != null) ProposalDetailPage.followThrough,
-      if (_addition != null) ProposalDetailPage.added,
-      if (_goalInReview != null) ProposalDetailPage.goals,
-    ];
+    final pages = _detailPages;
     return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
   }
+
+  /// Which of the stories the proposal adds, and of the fact summaries it
+  /// rewrites, is shown.
+  int _storyIndex = 0;
+  int _factIndex = 0;
+
+  /// The story the proposal adds shown under its bar, if it adds any.
+  ProposedStory? get _story => switch (_shownProposal?.traitExamples) {
+    final stories? when stories.isNotEmpty =>
+      stories[_storyIndex.clamp(0, stories.length - 1)],
+    _ => null,
+  };
+
+  /// The fact summary the proposal rewrites shown under its bar, if it
+  /// rewrites any.
+  ProposedSummary? get _fact => switch (_proposal?.factSummaries) {
+    final facts? when facts.isNotEmpty =>
+      facts[_factIndex.clamp(0, facts.length - 1)],
+    _ => null,
+  };
+
+  /// Shows the [index]th story the proposal adds under its bar, and
+  /// scrolls the timeline to the event it's at, if it's at one.
+  void _goToStory(int index) {
+    final stories = _shownProposal?.traitExamples ?? const <ProposedStory>[];
+    if (stories.isEmpty) return;
+    final i = index.clamp(0, stories.length - 1);
+    setState(() {
+      _storyIndex = i;
+      _detailPage = ProposalDetailPage.stories;
+    });
+    if (_proposal?.event(stories[i].example.eventId) case final e?) {
+      _scrollToTime(e.start);
+    }
+  }
+
+  /// Shows the [index]th fact summary the proposal rewrites under its bar.
+  void _goToFact(int index) {
+    final facts = _proposal?.factSummaries ?? const <ProposedSummary>[];
+    if (facts.isEmpty) return;
+    setState(() {
+      _factIndex = index.clamp(0, facts.length - 1);
+      _detailPage = ProposalDetailPage.facts;
+    });
+  }
+
+  /// Goes to the first thing Claude's unsure of, in its recap.
+  void _goToUnsure() {
+    final recap = _proposal?.recap;
+    if (recap == null || recap.unsure.isEmpty) return;
+    if (_detailsCollapsed) _setDetailsCollapsed(false);
+    _goToRecap(recap.points.indexOf(recap.unsure.first));
+  }
+
+  /// Each trait fact's name, by "trait id/fact id".
+  Map<String, String> get _factNames => {
+    for (final t in _memory.traits ?? const <Trait>[])
+      for (final f in t.facts) '${t.id}/${f.id}': f.name,
+  };
 
   /// Which point of Claude's recap is shown.
   int _recapIndex = 0;
@@ -1052,7 +1122,8 @@ class _EventsScreenState extends State<EventsScreen> {
           in _goalInReview?.tagged ?? const <(ProposalEvent, GoalShare)>[])
         e.id,
     },
-    ProposalDetailPage.notes || null => const {},
+    ProposalDetailPage.stories => {?_story?.example.eventId},
+    ProposalDetailPage.notes || ProposalDetailPage.facts || null => const {},
   };
 
   /// The proposal's notes, after the latest one an earlier compaction
@@ -1246,7 +1317,9 @@ class _EventsScreenState extends State<EventsScreen> {
         (final e, _) => e.start,
         null => null,
       },
-      ProposalDetailPage.claude => null,
+      ProposalDetailPage.stories =>
+        _proposal?.event(_story?.example.eventId)?.start,
+      ProposalDetailPage.claude || ProposalDetailPage.facts => null,
     };
     if (time != null) _scrollToTime(time);
   }
@@ -5765,14 +5838,23 @@ class _EventsScreenState extends State<EventsScreen> {
         ? -1
         : indexOf(goalsInReview, (g) => g.goalId == goal.goalId);
     final goalNames = _recapGoalNames;
+    final stories = proposal.traitExamples;
+    final story = _story;
+    final storyAt = story == null
+        ? -1
+        : indexOf(stories, (s) => s.id == story.id);
+    final storyTrait = switch (story) {
+      final s? =>
+        (_memory.traits ?? const <Trait>[])
+            .where((t) => t.id == s.example.traitId)
+            .firstOrNull,
+      null => null,
+    };
+    final facts = proposal.factSummaries;
+    final fact = _fact;
+    final factAt = fact == null ? -1 : facts.indexOf(fact);
     // Its pages, as it'll have them: those with something on.
-    final pages = [
-      if (point != null) ProposalDetailPage.claude,
-      if (note != null) ProposalDetailPage.notes,
-      if (cancel != null) ProposalDetailPage.followThrough,
-      if (addition != null) ProposalDetailPage.added,
-      if (goal != null) ProposalDetailPage.goals,
-    ];
+    final pages = _detailPages;
     return ProposalDetails(
       initialPage: switch (pages.indexOf(_detailPage)) {
         -1 => 0,
@@ -5906,6 +5988,57 @@ class _EventsScreenState extends State<EventsScreen> {
                   : null,
             ),
       goalCount: goalsInReview.length,
+      stories: story == null
+          ? null
+          : ProposalStoryStrip(
+              trait:
+                  storyTrait?.name ?? story.traitName ?? story.example.traitId,
+              icon: storyTrait != null && TraitIcon.hasIcon(storyTrait)
+                  ? TraitIcon(storyTrait, size: 16)
+                  : null,
+              who: proposedStoryWho(story, _memory.people),
+              what: story.example.what,
+              event: switch (proposal.event(story.example.eventId)) {
+                final e? => _reviewedNames[e.id] ?? e.summary,
+                null => null,
+              },
+              yours: story.decidedBy == DecidedBy.user,
+              index: storyAt,
+              count: stories.length,
+              onChange: _proposalBusy || widget.proposals == null
+                  ? null
+                  : () => _changeStory(story),
+              onDrop: _proposalBusy || widget.proposals == null
+                  ? null
+                  : () => _dropStory(story),
+              onPrevious: storyAt > 0 ? () => _goToStory(storyAt - 1) : null,
+              onNext: storyAt < stories.length - 1
+                  ? () => _goToStory(storyAt + 1)
+                  : null,
+            ),
+      storyCount: stories.length,
+      facts: fact == null
+          ? null
+          : ProposalFactStrip(
+              person: _personNames[fact.personId] ?? fact.personId,
+              fact: _factNames[fact.fact] ?? fact.fact,
+              change: factChange(fact.summary, fact.previous),
+              isNew: fact.previous == null,
+              index: factAt,
+              count: facts.length,
+              onOpen: () => showFactSummariesSheet(
+                context,
+                proposal,
+                personNames: _personNames,
+                factNames: _factNames,
+                only: fact,
+              ),
+              onPrevious: factAt > 0 ? () => _goToFact(factAt - 1) : null,
+              onNext: factAt < facts.length - 1
+                  ? () => _goToFact(factAt + 1)
+                  : null,
+            ),
+      factCount: facts.length,
       collapsed: _detailsCollapsed,
       onCollapsed: _setDetailsCollapsed,
       onPage: _turnDetailsTo,
@@ -6529,6 +6662,7 @@ class _EventsScreenState extends State<EventsScreen> {
           },
         ),
         onStories: _showProposedStories,
+        onUnsure: _goToUnsure,
       ),
     if (_shownProposal case final proposal?) _buildDetails(proposal),
   ];

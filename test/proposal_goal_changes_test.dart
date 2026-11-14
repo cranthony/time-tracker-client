@@ -746,6 +746,9 @@ void main() {
       tester,
     ) async {
       await open(tester);
+      // The details open on the notes: to Claude's recap.
+      await tester.tap(find.textContaining('Claude (').first);
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Next point'));
       await tester.pumpAndSettle();
       expect(
