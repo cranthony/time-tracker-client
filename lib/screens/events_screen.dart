@@ -86,6 +86,7 @@ import '../widgets/trait_example_dialog.dart';
 import '../widgets/trait_icon.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
+import '../widgets/guided_review.dart';
 import '../widgets/status_message.dart';
 
 /// One day's events on a timeline ([DayTimeline]), from midnight to
@@ -781,6 +782,185 @@ class _EventsScreenState extends State<EventsScreen> {
   ProposalDetailPage? get _shownPage {
     final pages = _detailPages;
     return pages.contains(_detailPage) ? _detailPage : pages.firstOrNull;
+  }
+
+  /// What of the open proposal guided review's shown -- by
+  /// [ReviewStep.key] -- and which proposal that's of.
+  Set<String> _reviewSeen = {};
+  String? _reviewSeenOf;
+
+  /// Whether the day's other panels are folded into a line while the
+  /// proposal's reviewed, to give what's reviewed the room.
+  bool _reviewFolded = true;
+
+  /// What guided review steps through, in order: the proposal's notes
+  /// (not those an earlier compaction used), goals, additions, stories,
+  /// fact summaries, and what Claude's unsure of.
+  List<ReviewStep> get _reviewSteps {
+    final proposal = _shownProposal;
+    if (proposal == null) return const [];
+    final notes = _proposalNotes;
+    final points = proposal.recap?.points ?? const <RecapPoint>[];
+    return [
+      for (final (i, n) in notes.indexed)
+        if (!n.compacted)
+          (page: ProposalDetailPage.notes, index: i, key: _noteKey(n)),
+      for (final (i, g) in _goalsInReview.indexed)
+        (page: ProposalDetailPage.goals, index: i, key: _goalKey(g)),
+      for (final (i, a) in _additions.indexed)
+        (page: ProposalDetailPage.added, index: i, key: _addedKey(a)),
+      for (final (i, st) in proposal.traitExamples.indexed)
+        (page: ProposalDetailPage.stories, index: i, key: _storyKey(st)),
+      for (final (i, f) in proposal.factSummaries.indexed)
+        (page: ProposalDetailPage.facts, index: i, key: _factKey(f)),
+      for (final p in proposal.recap?.unsure ?? const <RecapPoint>[])
+        (
+          page: ProposalDetailPage.claude,
+          index: points.indexOf(p),
+          key: _unsureKey(p),
+        ),
+    ];
+  }
+
+  /// The [ReviewStep.key] of what's shown under the proposal's bar, if
+  /// it's one guided review steps to.
+  String? get _shownStepKey => switch (_shownPage) {
+    ProposalDetailPage.notes => switch (_note) {
+      final n? when !n.compacted => _noteKey(n),
+      _ => null,
+    },
+    ProposalDetailPage.goals => switch (_goalInReview) {
+      final g? => _goalKey(g),
+      null => null,
+    },
+    ProposalDetailPage.added => switch (_addition) {
+      final a? => _addedKey(a),
+      null => null,
+    },
+    ProposalDetailPage.stories => switch (_story) {
+      final st? => _storyKey(st),
+      null => null,
+    },
+    ProposalDetailPage.facts => switch (_fact) {
+      final f? => _factKey(f),
+      null => null,
+    },
+    ProposalDetailPage.claude => switch (_recapPoint) {
+      final p? when _proposal?.recap?.unsure.contains(p) ?? false => _unsureKey(
+        p,
+      ),
+      _ => null,
+    },
+    ProposalDetailPage.followThrough || null => null,
+  };
+
+  // Each says what it is as it is now, so it's to review again once
+  // Claude changes it.
+  static String _noteKey(ProposalNote n) =>
+      'notes:${n.id}:${_fingerprint([n.text, n.use.name, n.eventId, n.edgeOf, n.annotates])}';
+  static String _goalKey(_GoalInReview g) =>
+      'goals:${g.goalId}:${_fingerprint([g.change?.change.status, g.change?.change.retryDeadline, ...?g.change?.change.noteIds, g.closed])}';
+  static String _addedKey(_Added a) =>
+      'added:${a.addition.ref}:${_fingerprint([a.addition.kind.name, a.addition.name])}';
+  static String _storyKey(ProposedStory st) =>
+      'stories:${st.id}:${_fingerprint([st.example.traitId, st.example.when, st.example.personId, st.example.who, st.example.what, st.example.why, st.example.eventId])}';
+  static String _factKey(ProposedSummary f) =>
+      'facts:${f.personId}/${f.fact}:${_fingerprint([f.summary])}';
+  static String _unsureKey(RecapPoint p) => 'claude:${_fingerprint([p.text])}';
+
+  /// [parts], hashed the same from one run of the app to the next
+  /// (FNV-1a, 32 bits).
+  static String _fingerprint(List<Object?> parts) {
+    var hash = 0x811c9dc5;
+    for (final unit
+        in parts.map((p) => '${p ?? ''}').join('\u0000').codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0xffffffff;
+    }
+    return hash.toRadixString(36);
+  }
+
+  /// Guided review's been shown [key]: kept, best effort, for the
+  /// proposal, so what's been seen is known when the app's opened again.
+  void _markSeen(String key) {
+    if (!_reviewSeen.add(key)) return;
+    final id = _reviewSeenOf;
+    if (id == null) return;
+    try {
+      SharedPreferencesAsync()
+          .setStringList(_reviewSeenKey, [id, ..._reviewSeen])
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
+    }
+  }
+
+  /// What guided review had shown of the proposal [id], kept from before.
+  Future<void> _loadReviewSeen(String id) async {
+    try {
+      final kept = await SharedPreferencesAsync().getStringList(_reviewSeenKey);
+      if (!mounted || _reviewSeenOf != id) return;
+      if (kept case [final of, ...final seen] when of == id) {
+        setState(() => _reviewSeen.addAll(seen));
+      }
+    } catch (_) {
+      // Nothing kept: it starts again.
+    }
+  }
+
+  /// Guided review starts again for a proposal other than the last.
+  void _reviewOf(Proposal proposal) {
+    if (_reviewSeenOf == proposal.id) return;
+    _reviewSeenOf = proposal.id;
+    _reviewSeen = {};
+    _reviewFolded = true;
+    unawaited(_loadReviewSeen(proposal.id));
+  }
+
+  /// Shows [step] under the proposal's bar, and scrolls the timeline to
+  /// it.
+  void _goToStep(ReviewStep step) {
+    if (_detailsCollapsed) _setDetailsCollapsed(false);
+    switch (step.page) {
+      case ProposalDetailPage.notes:
+        setState(() => _detailPage = ProposalDetailPage.notes);
+        _goToNote(step.index);
+      case ProposalDetailPage.goals:
+        _goToGoal(step.index);
+      case ProposalDetailPage.added:
+        setState(() => _detailPage = ProposalDetailPage.added);
+        _goToAddition(step.index);
+      case ProposalDetailPage.stories:
+        _goToStory(step.index);
+      case ProposalDetailPage.facts:
+        _goToFact(step.index);
+      case ProposalDetailPage.claude:
+        _goToRecap(step.index);
+      case ProposalDetailPage.followThrough:
+        setState(() => _detailPage = ProposalDetailPage.followThrough);
+        _goToCancel(step.index);
+    }
+  }
+
+  /// Guided review's Next: the next thing not yet reviewed.
+  void _reviewNext() {
+    final next = nextToReview(
+      _reviewSteps,
+      _reviewSeen,
+      current: _shownStepKey,
+    );
+    if (next != null) _goToStep(next);
+  }
+
+  /// The first of [page]'s steps not yet reviewed, or else its first.
+  void _reviewPage(ProposalDetailPage page) {
+    final mine = [
+      for (final s in _reviewSteps)
+        if (s.page == page) s,
+    ];
+    final step =
+        mine.where((s) => !_reviewSeen.contains(s.key)).firstOrNull ??
+        mine.firstOrNull;
+    if (step != null) _goToStep(step);
   }
 
   /// Which of the stories the proposal adds, and of the fact summaries it
@@ -2178,8 +2358,11 @@ class _EventsScreenState extends State<EventsScreen> {
   void _goToGoals(FocusNode group, String none) {
     if (_goalsFocus.focusFirst(group)) return;
     void say() => HotkeyScope.maybeOf(context)?.say(none);
-    if (!_goalsDueCollapsed) return say();
-    _setGoalsDueCollapsed(false);
+    // Folded while the proposal's reviewed: shown again.
+    final folded = _reviewFolded && _reviewSteps.isNotEmpty;
+    if (!_goalsDueCollapsed && !folded) return say();
+    if (folded) setState(() => _reviewFolded = false);
+    if (_goalsDueCollapsed) _setGoalsDueCollapsed(false);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_goalsFocus.focusFirst(group)) say();
     });
@@ -6562,7 +6745,11 @@ class _EventsScreenState extends State<EventsScreen> {
       builder: (context, page) => Column(
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(maxHeight: page.maxHeight / 2),
+            // More while the proposal's reviewed, the day's other panels
+            // folded, so what's reviewed is seen whole.
+            constraints: BoxConstraints(
+              maxHeight: page.maxHeight * (_reviewSteps.isEmpty ? 0.5 : 0.6),
+            ),
             child: SingleChildScrollView(
               key: const Key('day-panels'),
               primary: false,
@@ -6581,91 +6768,180 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The panels above the timeline: the day's summary, its weather,
   /// all-day events and goals due, and the open proposal's bar and
   /// details.
-  List<Widget> _buildPanels(List<Event>? events) => [
-    if (events != null)
-      DaySummary(
-        events: events,
-        day: _day,
-        actions: _actionsById,
-        goals: _shownGoals ?? const [],
-        collapsed: _summaryCollapsed,
-        onCollapsed: _setSummaryCollapsed,
-        durations: _summaryDurations,
-        onDurations: _setSummaryDurations,
-      ),
-    if (Weather.of(context) case final weather? when weather.enabled)
-      WeatherStrip(
-        weather: weather,
-        day: _day,
-        now: widget.clock(),
-        collapsed: _weatherCollapsed,
-        onCollapsed: _setWeatherCollapsed,
-        onDay: _goToDay,
-      ),
-    if (GoogleCalendars.of(context) case final calendars?)
-      GoogleAllDayStrip(
-        events: [
-          for (final e in calendars.on(_day))
-            if (e.allDay) e,
-        ],
-        collapsed: _allDayCollapsed,
-        onCollapsed: _setAllDayCollapsed,
-        onTap: _openGoogleEvent,
-      ),
-    if (_shownGoals case final goals?)
-      GoalsDueStrip(
-        goals: goalsDueOn(goals, _day),
-        missed: missedOn(goals, _day),
-        overdue: overdueGoalsOn(goals, _day, today: widget.clock()),
-        upcoming: upcomingGoalsOn(goals, _day, today: widget.clock()),
-        day: _day,
-        today: widget.clock(),
-        tree: GoalTree(goals),
-        spent: _compactedGoalTime(goals),
-        collapsed: _goalsDueCollapsed,
-        onCollapsed: _setGoalsDueCollapsed,
-        onTap: GoalsScope.of(context) == null ? null : _openGoal,
-        onOverdueAction: GoalsScope.of(context) == null ? null : _actOnOverdue,
-        focus: _goalsFocus,
-      ),
-    if (_notices.isNotEmpty)
-      ProposalNoticesBanner(
-        notices: _notices,
-        onDismiss: (notice) => widget.eventOutbox?.notices?.dismiss(notice),
-      ),
-    if (_proposal case final proposal?)
-      ProposalBar(
-        proposal: proposal,
-        busy: _proposalBusy,
-        closing: widget.eventOutbox?.closing(proposal.id)?.label,
-        changes: _changedSince.length,
-        joined: _hasDetails(proposal),
-        onConfirm: _confirmProposal,
-        onNote: _noteForClaude,
-        onNotes: _showProposalNotes,
-        onRetry: _finishProposal,
-        onGoTo: _goToProposal,
-        onAbandon: _abandonProposal,
-        hidden: _hidden,
-        onHide: _toggleHidden,
-        onRevisited: switch (proposal.revisited) {
-          [final first, ...] => () => _scrollToTime(first.start, nearTop: true),
-          _ => null,
-        },
-        onFacts: () => showFactSummariesSheet(
-          context,
-          proposal,
-          personNames: _personNames,
-          factNames: {
-            for (final t in _memory.traits ?? const <Trait>[])
-              for (final f in t.facts) '${t.id}/${f.id}': f.name,
-          },
+  List<Widget> _buildPanels(List<Event>? events) {
+    final review = _review();
+    final day = <Widget>[
+      if (events != null)
+        DaySummary(
+          events: events,
+          day: _day,
+          actions: _actionsById,
+          goals: _shownGoals ?? const [],
+          collapsed: _summaryCollapsed,
+          onCollapsed: _setSummaryCollapsed,
+          durations: _summaryDurations,
+          onDurations: _setSummaryDurations,
         ),
-        onStories: _showProposedStories,
-        onUnsure: _goToUnsure,
+      if (Weather.of(context) case final weather? when weather.enabled)
+        WeatherStrip(
+          weather: weather,
+          day: _day,
+          now: widget.clock(),
+          collapsed: _weatherCollapsed,
+          onCollapsed: _setWeatherCollapsed,
+          onDay: _goToDay,
+        ),
+      if (GoogleCalendars.of(context) case final calendars?)
+        GoogleAllDayStrip(
+          events: [
+            for (final e in calendars.on(_day))
+              if (e.allDay) e,
+          ],
+          collapsed: _allDayCollapsed,
+          onCollapsed: _setAllDayCollapsed,
+          onTap: _openGoogleEvent,
+        ),
+      if (_shownGoals case final goals?)
+        GoalsDueStrip(
+          goals: goalsDueOn(goals, _day),
+          missed: missedOn(goals, _day),
+          overdue: overdueGoalsOn(goals, _day, today: widget.clock()),
+          upcoming: upcomingGoalsOn(goals, _day, today: widget.clock()),
+          day: _day,
+          today: widget.clock(),
+          tree: GoalTree(goals),
+          spent: _compactedGoalTime(goals),
+          collapsed: _goalsDueCollapsed,
+          onCollapsed: _setGoalsDueCollapsed,
+          onTap: GoalsScope.of(context) == null ? null : _openGoal,
+          onOverdueAction: GoalsScope.of(context) == null
+              ? null
+              : _actOnOverdue,
+          focus: _goalsFocus,
+        ),
+    ];
+    return [
+      if (_notices.isNotEmpty)
+        ProposalNoticesBanner(
+          notices: _notices,
+          onDismiss: (notice) => widget.eventOutbox?.notices?.dismiss(notice),
+        ),
+      if (_proposal case final proposal?)
+        ProposalBar(
+          proposal: proposal,
+          busy: _proposalBusy,
+          closing: widget.eventOutbox?.closing(proposal.id)?.label,
+          changes: _changedSince.length,
+          joined: _hasDetails(proposal),
+          onConfirm: _confirmProposal,
+          onNote: _noteForClaude,
+          onNotes: _showProposalNotes,
+          onRetry: _finishProposal,
+          onGoTo: _goToProposal,
+          onAbandon: _abandonProposal,
+          hidden: _hidden,
+          onHide: _toggleHidden,
+          onRevisited: switch (proposal.revisited) {
+            [final first, ...] => () => _scrollToTime(
+              first.start,
+              nearTop: true,
+            ),
+            _ => null,
+          },
+          onFacts: () => showFactSummariesSheet(
+            context,
+            proposal,
+            personNames: _personNames,
+            factNames: {
+              for (final t in _memory.traits ?? const <Trait>[])
+                for (final f in t.facts) '${t.id}/${f.id}': f.name,
+            },
+          ),
+          onStories: _showProposedStories,
+          onUnsure: _goToUnsure,
+          onNext: review?.next == null ? null : _reviewNext,
+          nextTooltip: review?.nextTooltip,
+          progress: review == null
+              ? null
+              : ReviewProgress(
+                  sections: review.sections,
+                  current: _shownPage,
+                  onTap: _proposalBusy ? null : _reviewPage,
+                ),
+        ),
+      if (_shownProposal case final proposal?) _buildDetails(proposal),
+      if (review != null && _reviewFolded && day.isNotEmpty)
+        _foldedPanels(day.length)
+      else
+        ...day,
+    ];
+  }
+
+  /// Guided review of the open proposal, while there's anything in it to
+  /// review: the [ReviewProgress] sections, and what Next goes to, said.
+  /// What's shown under the proposal's bar is now reviewed.
+  ({List<ReviewSection> sections, ReviewStep? next, String? nextTooltip})?
+  _review() {
+    final proposal = _shownProposal;
+    if (proposal == null) return null;
+    _reviewOf(proposal);
+    final steps = _reviewSteps;
+    if (steps.isEmpty) return null;
+    final shown = _shownStepKey;
+    if (shown != null && !_detailsCollapsed) _markSeen(shown);
+    final next = nextToReview(steps, _reviewSeen, current: shown);
+    final tooltip = switch (next) {
+      null => null,
+      final next => () {
+        final mine = [
+          for (final s in steps)
+            if (s.page == next.page) s.key,
+        ];
+        return 'Next: ${reviewPageName(next.page).toLowerCase()} '
+            '${mine.indexOf(next.key) + 1} of ${mine.length}';
+      }(),
+    };
+    return (
+      sections: reviewSections(steps, _reviewSeen),
+      next: next,
+      nextTooltip: tooltip,
+    );
+  }
+
+  /// The day's other panels -- [count] of them -- folded into a line while
+  /// the proposal's reviewed; tapping it shows them.
+  Widget _foldedPanels(int count) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: InkWell(
+        onTap: () => setState(() => _reviewFolded = false),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  "The day's summary and more: folded while reviewing",
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.expand_more,
+                size: 18,
+                semanticLabel: "Show the day's summary and more",
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
       ),
-    if (_shownProposal case final proposal?) _buildDetails(proposal),
-  ];
+    );
+  }
 
   /// Pulling the days down, or the refresh button: everything shown again.
   Future<void> _refreshAll() {
@@ -7145,6 +7421,10 @@ typedef _GoalInReview = ({
 
 /// Where whether a proposal's details are folded away is kept.
 const _detailsCollapsedKey = 'proposal_details_collapsed';
+
+/// Where what guided review's shown of the open proposal is kept: its id,
+/// then each [ReviewStep.key] shown.
+const _reviewSeenKey = 'proposal_review_seen';
 
 /// Where whether the day's summary is folded away is kept.
 const _summaryCollapsedKey = 'day_summary_collapsed';

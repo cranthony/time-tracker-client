@@ -309,6 +309,45 @@ void main() {
         if (value.selected) key,
     };
 
+    testWidgets('guided review: Next steps through what it adds, in the '
+        "same place, then becomes Confirm; the day's panels fold", (
+      tester,
+    ) async {
+      await open(tester);
+      final next = find.widgetWithText(FilledButton, 'Next');
+      expect(next, findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Confirm'), findsOneWidget);
+      expect(find.text('Jo'), findsOneWidget);
+      expect(find.bySemanticsLabel('Added: 1 of 3 reviewed'), findsOneWidget);
+      final where = tester.getCenter(next);
+
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+      expect(find.text('Make matcha'), findsWidgets);
+      expect(find.bySemanticsLabel('Added: 2 of 3 reviewed'), findsOneWidget);
+      // Not moved.
+      expect(tester.getCenter(next), where);
+
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Added: 3 of 3 reviewed'), findsOneWidget);
+      // All reviewed: Confirm, where Next was, and no smaller one.
+      expect(next, findsNothing);
+      final confirm = find.text('Confirm');
+      expect(confirm, findsOneWidget);
+      expect(tester.getCenter(confirm).dx, closeTo(where.dx, 40));
+      expect(find.widgetWithText(OutlinedButton, 'Confirm'), findsNothing);
+
+      // The day's panels, folded while it's reviewed, shown again.
+      final folded = find.text(
+        "The day's summary and more: folded while reviewing",
+      );
+      expect(folded, findsOneWidget);
+      await tester.tap(folded);
+      await tester.pumpAndSettle();
+      expect(folded, findsNothing);
+    });
+
     testWidgets('turned to, the follow-through and added pages scroll the '
         'timeline to the cancel shown, and where what is added is used', (
       tester,
@@ -706,7 +745,7 @@ void main() {
           proposal: proposal.copyWith(state: ProposalState.applied),
         );
       };
-      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.tap(find.text('Confirm'));
       await tester.pumpAndSettle();
       expect(proposals.calls, contains('confirm_proposal'));
       await expectTeaAt(tester, 'The teahouse');

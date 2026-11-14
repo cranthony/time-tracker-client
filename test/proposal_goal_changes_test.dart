@@ -449,6 +449,11 @@ void main() {
       tester,
     ) async {
       await open(tester);
+      // The goals due strip, folded while the proposal's reviewed, shown.
+      await tester.tap(
+        find.text("The day's summary and more: folded while reviewing"),
+      );
+      await tester.pumpAndSettle();
       // The fence, due yesterday, is missed in the proposal: not overdue.
       expect(find.text('Overdue'), findsNothing);
       expect(
@@ -484,7 +489,7 @@ void main() {
           proposal: proposal.copyWith(state: ProposalState.applied),
         );
       };
-      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.tap(find.text('Confirm'));
       await tester.pumpAndSettle();
       expect(
         memory.goals!.singleWhere((g) => g.id == 'fence').status,
@@ -780,7 +785,7 @@ void main() {
               'sub-goals. Make it with update_goals if it still applies.',
         ],
       );
-      await tester.tap(find.widgetWithText(FilledButton, 'Confirm'));
+      await tester.tap(find.text('Confirm'));
       await tester.pumpAndSettle();
       expect(find.text('Confirmed, with warnings'), findsOneWidget);
       expect(find.textContaining("fence (missed) wasn't made"), findsOneWidget);
