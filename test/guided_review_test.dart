@@ -39,6 +39,12 @@ void main() {
     );
   });
 
+  test('previous is the step before, seen or not', () {
+    expect(previousToReview(_steps, current: 'g1')?.key, 'n2');
+    expect(previousToReview(_steps, current: 'n1'), isNull);
+    expect(previousToReview(_steps), isNull);
+  });
+
   test('sections are a page each, in review order, with what\'s seen', () {
     final sections = reviewSections(_steps, {'n2'});
     expect([for (final s in sections) s.page], [

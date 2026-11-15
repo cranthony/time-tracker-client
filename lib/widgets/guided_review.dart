@@ -36,6 +36,13 @@ ReviewStep? nextToReview(
   return null;
 }
 
+/// The step before [current] in [steps], seen or not; null for the
+/// first, or with none shown.
+ReviewStep? previousToReview(List<ReviewStep> steps, {String? current}) {
+  final at = current == null ? -1 : steps.indexWhere((s) => s.key == current);
+  return at > 0 ? steps[at - 1] : null;
+}
+
 /// [steps], a section a page: its name, and whether each of its steps
 /// has been [seen].
 List<ReviewSection> reviewSections(List<ReviewStep> steps, Set<String> seen) =>

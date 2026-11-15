@@ -3,6 +3,7 @@
 // actions and locations it adds, settled there.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/note.dart';
@@ -15,6 +16,8 @@ import 'package:time_tracker_client/services/people_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
+import 'package:time_tracker_client/widgets/proposal_review.dart';
 import 'package:time_tracker_client/widgets/recap_markdown.dart';
 
 void main() {
@@ -259,6 +262,7 @@ void main() {
     Future<void> open(
       WidgetTester tester, {
       Map<String, Object?> extra = const {},
+      Hotkeys? hotkeys,
     }) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
@@ -283,6 +287,11 @@ void main() {
           child: PlanMemoryScope(
             memory: PlanMemory(),
             child: MaterialApp(
+              navigatorObservers: [?hotkeys],
+              builder: hotkeys == null
+                  ? null
+                  : (context, child) =>
+                        HotkeyScope(hotkeys: hotkeys, child: child!),
               home: EventsScreen(
                 repository: events,
                 serverLabel: 'offline demo',
@@ -346,6 +355,49 @@ void main() {
       await tester.tap(folded);
       await tester.pumpAndSettle();
       expect(folded, findsNothing);
+    });
+
+    testWidgets('guided review by key: N goes on, P and Shift+N go back, '
+        'and once all is reviewed N confirms nothing', (tester) async {
+      await open(tester, hotkeys: Hotkeys());
+      Future<void> press(LogicalKeyboardKey key, {bool shift = false}) async {
+        if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyEvent(key);
+        if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.pumpAndSettle();
+      }
+
+      String shown() => tester
+          .widget<ProposalAdditionStrip>(find.byType(ProposalAdditionStrip))
+          .addition
+          .name;
+
+      expect(shown(), 'Jo');
+      await press(LogicalKeyboardKey.keyN);
+      expect(shown(), 'Make matcha');
+      await press(LogicalKeyboardKey.keyP);
+      expect(shown(), 'Jo');
+      // At the first: nothing before it.
+      await press(LogicalKeyboardKey.keyP);
+      expect(shown(), 'Jo');
+      await press(LogicalKeyboardKey.keyN);
+      await press(LogicalKeyboardKey.keyN);
+      expect(shown(), 'The teahouse');
+      await press(LogicalKeyboardKey.keyN, shift: true);
+      expect(shown(), 'Make matcha');
+
+      // All reviewed: N says so, and doesn't confirm.
+      await press(LogicalKeyboardKey.keyN);
+      expect(find.text('Next'), findsNothing);
+      await press(LogicalKeyboardKey.keyN);
+      expect(proposals.calls, isNot(contains('confirm_proposal')));
+      expect(
+        find.text('All reviewed: confirm it with its Confirm button'),
+        findsOneWidget,
+      );
+      // Said for a while, then gone.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
     });
 
     testWidgets('turned to, the follow-through and added pages scroll the '

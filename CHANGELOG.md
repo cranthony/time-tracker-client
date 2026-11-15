@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.266.0
+
+- Guided review by key, on the Events page: N goes to the next thing to
+  review, as Next does, and P or Shift+N back to the one before. Once
+  all has been reviewed, N says so and confirms nothing: confirming
+  stays its button. Holding Ctrl shows N on Next.
+
 ## 7.265.0
 
 - Guided review: while a proposal has things to review, Next sits where
