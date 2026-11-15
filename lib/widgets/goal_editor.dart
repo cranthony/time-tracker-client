@@ -554,10 +554,7 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
   /// J ([later]) or K: highlights the next section shown, or the one
   /// before -- from the one with focus, or else the first, or the last.
   void _step({required bool later}) {
-    final shown = [
-      for (final MapEntry(:key, :value) in _sections.entries)
-        if (value.context?.mounted ?? false) key,
-    ];
+    final shown = _shownSections;
     if (shown.isEmpty) return;
     final focus = FocusManager.instance.primaryFocus;
     final at = shown.indexWhere((s) {
@@ -570,6 +567,20 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
           : shown[(at + (later ? 1 : -1)).clamp(0, shown.length - 1)],
     );
   }
+
+  /// Home or Shift+J, End or Shift+K ([last]): highlights the first
+  /// section shown, or the last.
+  void _toEnd({required bool last}) {
+    final shown = _shownSections;
+    if (shown.isEmpty) return;
+    _goTo(last ? shown.last : shown.first);
+  }
+
+  /// The sections shown, top to bottom.
+  List<_Section> get _shownSections => [
+    for (final MapEntry(:key, :value) in _sections.entries)
+      if (value.context?.mounted ?? false) key,
+  ];
 
   /// Puts the cursor in [section]'s text field: what's in it selected,
   /// with [selected], or else where it was.
@@ -632,6 +643,17 @@ class _GoalEditorPageState extends State<GoalEditorPage> {
       _disarm();
       _step(later: false);
     }),
+    // The first section, or the last.
+    for (final (trigger, last) in const [
+      (HotkeyTrigger.key(LogicalKeyboardKey.home), false),
+      (HotkeyTrigger.shift(LogicalKeyboardKey.keyJ), false),
+      (HotkeyTrigger.key(LogicalKeyboardKey.end), true),
+      (HotkeyTrigger.shift(LogicalKeyboardKey.keyK), true),
+    ])
+      HotkeyBinding(trigger, () {
+        _disarm();
+        _toEnd(last: last);
+      }),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), () {
       if (_secondAfter('d')) return _deadlineDate();
       if (_goTo(_Section.deadline)) {

@@ -135,9 +135,9 @@ class Hotkey {
     HotkeyPlace.anywhere,
   );
   static const endsAny = Hotkey(
-    'Home / End',
-    'Where J and K go through a list, highlight its first (Home) or last '
-        '(End) item',
+    'Home / End, Shift+J / Shift+K',
+    'Where J and K go through a list, highlight its first (Home or '
+        'Shift+J) or last (End or Shift+K) item',
     HotkeyPlace.anywhere,
   );
   static const scrollAny = Hotkey(
@@ -173,13 +173,15 @@ class Hotkey {
 
   static const stepEvents = Hotkey(
     'J / K',
-    'Highlight the next event (J) or the one before (K), from the one '
-        'happening now; past the last of the day, onto the next',
+    'Highlight the next event (J) or the one before (K), from the first '
+        '(J) or last (K) in view; past the last of the day, onto the next. '
+        'Tab and Shift+Tab go through them too',
     HotkeyPlace.events,
   );
   static const endEvents = Hotkey(
-    'Home / End',
-    'Highlight the first (Home) or last (End) event of the day',
+    'Home / End, Shift+J / Shift+K',
+    'Highlight the first (Home or Shift+J) or last (End or Shift+K) event '
+        'of the day',
     HotkeyPlace.events,
   );
   static const openEvent = Hotkey(
@@ -340,8 +342,9 @@ class Hotkey {
     HotkeyPlace.plan,
   );
   static const planEnds = Hotkey(
-    'Home / End',
-    'Go to the first (Home) or last (End) item of the pane shown',
+    'Home / End, Shift+J / Shift+K',
+    'Go to the first (Home or Shift+J) or last (End or Shift+K) item of '
+        'the pane shown',
     HotkeyPlace.plan,
   );
   static const planPanes = Hotkey(
@@ -370,6 +373,12 @@ class Hotkey {
     'Highlight the next section (J) or the one before (K); Enter goes '
         "into it: its text selected, its editor opened, or its first "
         'button, for Tab to go on from',
+    HotkeyPlace.goalEditor,
+  );
+  static const goalEnds = Hotkey(
+    'Home / End, Shift+J / Shift+K',
+    'Highlight the first section (Home or Shift+J) or the last (End or '
+        'Shift+K)',
     HotkeyPlace.goalEditor,
   );
   static const goalDeadline = Hotkey(
@@ -502,6 +511,7 @@ class Hotkey {
     retry,
     deactivateUntil,
     goalSections,
+    goalEnds,
     goalDeadline,
     goalStarts,
     goalPriority,
@@ -777,6 +787,13 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
     }
     if (keyboard.isShiftPressed) {
       final shifted = _find(_Kind.shift, key);
+      // Shift+J or Shift+K where nothing else takes them: Home or End.
+      if (shifted == null &&
+          (key == LogicalKeyboardKey.keyJ || key == LogicalKeyboardKey.keyK)) {
+        return stepFocus(later: key == LogicalKeyboardKey.keyK, toEnd: true)
+            ? KeyEventResult.handled
+            : KeyEventResult.ignored;
+      }
       if (shifted == null) return KeyEventResult.ignored;
       shifted.onPressed();
       return KeyEventResult.handled;
