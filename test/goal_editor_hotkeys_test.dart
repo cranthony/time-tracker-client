@@ -45,6 +45,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Shift and [key].
+  Future<void> shiftPress(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(key);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+  }
+
   /// The section highlighted, by its focus node's label.
   String? highlighted() => FocusManager.instance.primaryFocus?.debugLabel;
 
@@ -71,6 +79,19 @@ void main() {
     expect(highlighted(), 'Goal priority');
     await press(tester, LogicalKeyboardKey.keyK);
     expect(highlighted(), 'Goal deadline');
+  });
+
+  testWidgets('Shift+K and End go to the last section; Shift+J and Home, '
+      'the first', (tester) async {
+    await open(tester);
+    await shiftPress(tester, LogicalKeyboardKey.keyK);
+    expect(highlighted(), 'Goal hints');
+    await shiftPress(tester, LogicalKeyboardKey.keyJ);
+    expect(highlighted(), 'Goal title');
+    await press(tester, LogicalKeyboardKey.end);
+    expect(highlighted(), 'Goal hints');
+    await press(tester, LogicalKeyboardKey.home);
+    expect(highlighted(), 'Goal title');
   });
 
   testWidgets('K from nothing goes to the last; Enter goes into a section, '

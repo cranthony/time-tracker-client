@@ -530,7 +530,7 @@ List<T> placeLabels<T>(
 /// Tapping an event calls [onTap] with it, and pressing and holding it,
 /// [onLongPress]; tapping anywhere else calls [onTapTime] with the time
 /// there. The [highlighted] event is ringed, pulsing, and the [keyed]
-/// one, steadily. While a cursor stops at notes ([pulseNotes]) or
+/// one -- or the one with focus ([focusNodeFor]) -- steadily. While a cursor stops at notes ([pulseNotes]) or
 /// events' edges ([pulseEdges]), they're marked, pulsing.
 class DayTimeline extends StatelessWidget {
   const DayTimeline({
@@ -552,6 +552,7 @@ class DayTimeline extends StatelessWidget {
     this.faded,
     this.highlighted,
     this.keyed,
+    this.focusNodeFor,
     this.listed = const {},
     this.pulseNotes = false,
     this.pulseEdges = false,
@@ -656,8 +657,15 @@ class DayTimeline extends StatelessWidget {
   /// The id of an event to pick out: ringed, pulsing.
   final String? highlighted;
 
-  /// The id of the event the keyboard's on: ringed, steadily.
+  /// The id of an event to ring steadily, as one with focus is: the
+  /// one a note's cursor is in, say.
   final String? keyed;
+
+  /// Each event's focus node, for J and K, and Tab, to highlight it --
+  /// ringed, steadily, while it has focus -- and Enter to open it. Null,
+  /// its events take no focus: a day drawn beside the one shown, say --
+  /// nor one it gives none.
+  final FocusNode? Function(Event event)? focusNodeFor;
 
   /// The events in a list, by id, with its icon: each ringed, slightly
   /// pulsing, the icon on it.
@@ -980,6 +988,7 @@ class DayTimeline extends StatelessWidget {
                               onLongPress: onLongPress == null
                                   ? null
                                   : () => onLongPress!(placement.event),
+                              focusNode: focusNodeFor?.call(placement.event),
                               faded:
                                   faded != null && placement.event.id == faded,
                               mark: marks[placement.event.id],
@@ -1027,6 +1036,22 @@ class DayTimeline extends StatelessWidget {
                               width: cardWidth + 6,
                               height: placement.bottom - placement.top + 6,
                               child: const IgnorePointer(child: _Keyed()),
+                            )
+                          else if (focusNodeFor?.call(placement.event)
+                              case final node?)
+                            Positioned(
+                              left: _cardsLeft - 3,
+                              top: placement.top - 3,
+                              width: cardWidth + 6,
+                              height: placement.bottom - placement.top + 6,
+                              child: IgnorePointer(
+                                child: ListenableBuilder(
+                                  listenable: node,
+                                  builder: (context, _) => node.hasFocus
+                                      ? const _Keyed()
+                                      : const SizedBox.shrink(),
+                                ),
+                              ),
                             ),
                         if (pulseNotes || pulseEdges)
                           Positioned.fill(
@@ -2004,6 +2029,7 @@ class _EventCard extends StatelessWidget {
     required this.styles,
     required this.onTap,
     required this.onLongPress,
+    this.focusNode,
     required this.faded,
     required this.timeLabel,
     this.mark,
@@ -2039,6 +2065,9 @@ class _EventCard extends StatelessWidget {
   final _CardStyles styles;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// Its focus: ringed while it has it ([DayTimeline.focusNodeFor]).
+  final FocusNode? focusNode;
 
   /// Whether it's drawn faintly: being moved from here.
   final bool faded;
@@ -2116,6 +2145,11 @@ class _EventCard extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             onLongPress: onLongPress,
+            focusNode: focusNode,
+            // None given, it takes none: its focus would be shown nowhere.
+            canRequestFocus: focusNode != null,
+            // With focus, it's ringed ([_Keyed]), not shaded.
+            focusColor: Colors.transparent,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

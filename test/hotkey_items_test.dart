@@ -33,6 +33,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Shift and [key].
+  Future<void> shiftPress(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(key);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+  }
+
   /// What the button highlighted says.
   String? highlighted() {
     final context = FocusManager.instance.primaryFocus?.context;
@@ -98,6 +106,15 @@ void main() {
       await press(tester, LogicalKeyboardKey.home);
       expect(highlighted(), 'Item 0');
       expect(rectOf(tester, 'Item 0').top, greaterThanOrEqualTo(view.top));
+    });
+
+    testWidgets('Shift+K highlights the last item, as End does; Shift+J, '
+        'the first, as Home does', (tester) async {
+      await pump(tester, 10 * row);
+      await shiftPress(tester, LogicalKeyboardKey.keyK);
+      expect(highlighted(), 'Item 39');
+      await shiftPress(tester, LogicalKeyboardKey.keyJ);
+      expect(highlighted(), 'Item 0');
     });
 
     testWidgets('K starts at the last of the list wholly in view', (
@@ -345,6 +362,15 @@ void main() {
       await press(tester, LogicalKeyboardKey.end);
       expect(goalHighlighted(), titles.last);
       await press(tester, LogicalKeyboardKey.home);
+      expect(goalHighlighted(), titles.first);
+    });
+
+    testWidgets('Shift+K and Shift+J go to the last and first goal of the '
+        'pane', (tester) async {
+      final titles = await pump(tester);
+      await shiftPress(tester, LogicalKeyboardKey.keyK);
+      expect(goalHighlighted(), titles.last);
+      await shiftPress(tester, LogicalKeyboardKey.keyJ);
       expect(goalHighlighted(), titles.first);
     });
 

@@ -5,7 +5,6 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/screens/events_screen.dart';
 import 'package:time_tracker_client/services/app_settings.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
-import 'package:time_tracker_client/widgets/day_timeline.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
 import 'package:time_tracker_client/widgets/pending_event_box.dart';
 
@@ -55,30 +54,42 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  DayTimeline timeline(WidgetTester tester, DateTime day) =>
-      tester.widget<DayTimeline>(find.byKey(ValueKey(('shown', day))).first);
+  /// Shift and [key].
+  Future<void> shiftPress(WidgetTester tester, LogicalKeyboardKey key) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(key);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+  }
+
+  /// The id of the event highlighted -- with focus -- on [day], shown.
+  String? keyed(WidgetTester tester, DateTime day) {
+    expect(find.byKey(ValueKey(('shown', day))), findsWidgets);
+    return switch (FocusManager.instance.primaryFocus?.debugLabel) {
+      final label? when label.startsWith('Event ') => label.substring(6),
+      _ => null,
+    };
+  }
 
   PendingEventBox box(WidgetTester tester) =>
       tester.widget<PendingEventBoxView>(find.byType(PendingEventBoxView)).box;
 
-  testWidgets('J and K step through the events, from the one happening now', (
-    tester,
-  ) async {
+  testWidgets('J and K step through the events', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
     final today = at(30, 0);
-    expect(timeline(tester, today).keyed, isNull);
+    expect(keyed(tester, today), isNull);
 
     await press(tester, LogicalKeyboardKey.keyJ);
-    expect(timeline(tester, today).keyed, 'lunch');
+    expect(keyed(tester, today), 'lunch');
     await press(tester, LogicalKeyboardKey.keyJ);
-    expect(timeline(tester, today).keyed, 'walk');
+    expect(keyed(tester, today), 'walk');
     await press(tester, LogicalKeyboardKey.keyK);
     await press(tester, LogicalKeyboardKey.keyK);
-    expect(timeline(tester, today).keyed, 'work');
+    expect(keyed(tester, today), 'work');
 
     await press(tester, LogicalKeyboardKey.escape);
-    expect(timeline(tester, today).keyed, isNull);
+    expect(keyed(tester, today), isNull);
   });
 
   testWidgets('J past the last of the day goes onto the next; K, the day '
@@ -89,14 +100,87 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyJ);
     await press(tester, LogicalKeyboardKey.keyJ);
     final tomorrow = DateTime(2026, 10, 1);
-    expect(timeline(tester, tomorrow).keyed, 't-early');
+    expect(keyed(tester, tomorrow), 't-early');
 
     await press(tester, LogicalKeyboardKey.keyK);
-    expect(timeline(tester, at(30, 0)).keyed, 'walk');
+    expect(keyed(tester, at(30, 0)), 'walk');
     for (var i = 0; i < 3; i++) {
       await press(tester, LogicalKeyboardKey.keyK);
     }
-    expect(timeline(tester, at(29, 0)).keyed, 'y-late');
+    expect(keyed(tester, at(29, 0)), 'y-late');
+  });
+
+  /// The timeline's vertical scroll.
+  ScrollPosition timelineScroll(WidgetTester tester) => tester
+      .stateList<ScrollableState>(
+        find.ancestor(
+          of: find.byKey(ValueKey(('shown', at(30, 0)))).first,
+          matching: find.byType(Scrollable),
+        ),
+      )
+      .firstWhere((s) => s.position.axis == Axis.vertical)
+      .position;
+
+  testWidgets('J starts from the first event in view, not the one happening '
+      'now', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    // Work's start just in view, under its top; Lunch, now's, after it.
+    final scroll = timelineScroll(tester);
+    final view = tester.getRect(
+      find
+          .ancestor(
+            of: find.byKey(ValueKey(('shown', at(30, 0)))).first,
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    final work = tester.getRect(find.text('Work').first);
+    scroll.jumpTo(scroll.pixels + work.top - view.top - 40);
+    await tester.pumpAndSettle();
+
+    await press(tester, LogicalKeyboardKey.keyJ);
+    expect(keyed(tester, at(30, 0)), 'work');
+  });
+
+  testWidgets('Shift+J and Shift+K go to the first and last event, as Home '
+      'and End do', (tester) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final today = at(30, 0);
+    await shiftPress(tester, LogicalKeyboardKey.keyK);
+    expect(keyed(tester, today), 'walk');
+    await shiftPress(tester, LogicalKeyboardKey.keyJ);
+    expect(keyed(tester, today), 'work');
+  });
+
+  testWidgets('Tab goes to the events too, for J to go on from', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    final today = at(30, 0);
+    String? reached;
+    for (var i = 0; i < 60 && reached == null; i++) {
+      await press(tester, LogicalKeyboardKey.tab);
+      reached = keyed(tester, today);
+    }
+    expect(reached, isNotNull);
+
+    // J goes on from it, as from one J stepped to.
+    final events = ['work', 'lunch', 'walk'];
+    final from = events.indexOf(reached!);
+    expect(from, isNot(-1));
+    // Back one, or on from the first: not off the day.
+    await press(
+      tester,
+      from == 0 ? LogicalKeyboardKey.keyJ : LogicalKeyboardKey.keyK,
+    );
+    expect(keyed(tester, today), events[from == 0 ? 1 : from - 1]);
+
+    // Esc lets go of it.
+    await press(tester, LogicalKeyboardKey.escape);
+    expect(keyed(tester, today), isNull);
   });
 
   testWidgets("Home and End go to the day's first and last event", (
@@ -106,9 +190,9 @@ void main() {
     await tester.pumpAndSettle();
     final today = at(30, 0);
     await press(tester, LogicalKeyboardKey.end);
-    expect(timeline(tester, today).keyed, 'walk');
+    expect(keyed(tester, today), 'walk');
     await press(tester, LogicalKeyboardKey.home);
-    expect(timeline(tester, today).keyed, 'work');
+    expect(keyed(tester, today), 'work');
   });
 
   testWidgets('Enter opens the event highlighted', (tester) async {

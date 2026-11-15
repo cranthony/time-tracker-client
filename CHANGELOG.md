@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.269.0
+
+- Shift+J and Shift+K go to the first and last item, as Home and End
+  do: in lists, menus, the Plan page's panes and the day's events. In
+  the goal editor, all four go to its first or last section.
+- On the Events page, J and K start from the first (J) or last (K)
+  event in view, not the one happening now.
+- The event J and K highlight has the app's focus, so only one thing is
+  highlighted at a time: G, then J, leaves the goal for the event. Tab
+  goes through the events too, and J and K go on from the one it's on.
+
 ## 7.268.0
 
 - A story's "Who did it" is picked in the people picker -- searched,

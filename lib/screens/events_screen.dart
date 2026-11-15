@@ -245,12 +245,56 @@ class _EventsScreenState extends State<EventsScreen> {
   /// The event highlighted, having been asked to show it, a moment.
   String? _highlighted;
 
-  /// The event J and K have stepped to: highlighted, for Enter to open.
-  String? _keyed;
+  /// Each event's focus node on the day shown, by the day and the
+  /// event's id: the one with focus is highlighted -- by J and K, or Tab
+  /// -- for Enter to open. By the day too, as one across midnight is
+  /// drawn on both.
+  final _eventNodes = <(DateTime, String), FocusNode>{};
+
+  /// [event]'s focus node, on the day shown; none for one not saved yet,
+  /// with no id to tell it by.
+  FocusNode? _eventNode(Event event) => switch (event.id) {
+    final id? => _eventNodes.putIfAbsent((
+      _day,
+      id,
+    ), () => FocusNode(debugLabel: 'Event $id')),
+    null => null,
+  };
+
+  /// Whether a frame's to let go of the focus nodes of events no longer
+  /// drawn ([_pruneEventNodes]).
+  bool _pruning = false;
+
+  /// Lets go of the focus nodes of events no longer drawn: deleted, or on
+  /// a day gone from.
+  void _pruneEventNodes() {
+    _pruning = false;
+    _eventNodes.removeWhere((_, node) {
+      if (node.context != null) return false;
+      node.dispose();
+      return true;
+    });
+  }
+
+  /// The id of the event with focus -- stepped to by J and K, or Tab --
+  /// on the day shown.
+  String? get _keyed => _eventNodes.entries
+      .where((e) => e.key.$1 == _day && e.value.hasFocus)
+      .firstOrNull
+      ?.key
+      .$2;
+
+  /// Lets go of the event with focus, if one has it.
+  void _unkey() {
+    for (final node in _eventNodes.values) {
+      if (node.hasFocus) node.unfocus();
+    }
+  }
 
   /// Stepping to another day's events, whether to its first (later) or
-  /// its last, once they're loaded.
+  /// its last, once they're loaded; and the event stepped from.
   bool? _keyedOnto;
+  String? _keyedFrom;
   Timer? _unhighlight;
 
   /// Ticks as each minute starts, for the now line, and all that's
@@ -2517,6 +2561,9 @@ class _EventsScreenState extends State<EventsScreen> {
     _showTimes?.cancel();
     _unhighlight?.cancel();
     _minute?.cancel();
+    for (final node in _eventNodes.values) {
+      node.dispose();
+    }
     _pages.dispose();
     _scroll.dispose();
     super.dispose();
@@ -3187,6 +3234,8 @@ class _EventsScreenState extends State<EventsScreen> {
             scale: _scale,
           )
         : _day.add(const Duration(hours: 9));
+    // Its cursor rings the event it's in: no other.
+    _unkey();
     setState(() => _noteAt = _onGrid(at));
   }
 
@@ -3236,34 +3285,32 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// The event J and K have stepped to, if it's on the day shown.
   Event? get _keyedEvent =>
-      _steppable().where((e) => e.id == _keyed).firstOrNull;
+      _steppable().where((e) => e.id != null && e.id == _keyed).firstOrNull;
 
   /// Steps the highlight to the next event, [later], or the one before:
-  /// from the one happening now, on today, at first. Past the day's
-  /// first or last, onto the day before or after.
+  /// with none highlighted, from the first (J) or last (K) in view --
+  /// starting in it, or else showing in it at all -- or, with none in
+  /// view, the day's first or last. Past the day's first or last, onto
+  /// the day before or after.
   void _stepEvent({required bool later}) {
     final events = _steppable();
-    final at = events.indexWhere((e) => e.id == _keyed);
+    final keyed = _keyed;
+    final at = keyed == null ? -1 : events.indexWhere((e) => e.id == keyed);
     Event? next;
     if (at >= 0) {
       final i = at + (later ? 1 : -1);
       if (i >= 0 && i < events.length) next = events[i];
     } else if (events.isNotEmpty) {
-      final now = widget.clock();
-      next = !now.isBefore(_day) && now.isBefore(_dayEnd)
-          ? events.lastWhere(
-              (e) => !e.start.isAfter(now) && e.end.isAfter(now),
-              orElse: () => events.firstWhere(
-                (e) => e.start.isAfter(now),
-                orElse: () => events.last,
-              ),
-            )
-          : later
-          ? events.first
-          : events.last;
+      Event? end(Iterable<Event> these) =>
+          later ? these.firstOrNull : these.lastOrNull;
+      next =
+          end(events.where(_startsInView)) ??
+          end(events.where(_showsInView)) ??
+          (later ? events.first : events.last);
     }
     if (next != null) return _keyTo(next);
     _keyedOnto = later;
+    _keyedFrom = _keyed;
     _goToDay(later ? _dayEnd : DateTime(_day.year, _day.month, _day.day - 1));
     _keyOnto();
   }
@@ -3274,26 +3321,47 @@ class _EventsScreenState extends State<EventsScreen> {
     final later = _keyedOnto;
     if (later == null || _eventsOn(_day) == null) return;
     _keyedOnto = null;
+    final from = _keyedFrom;
+    _keyedFrom = null;
     final events = [
       for (final e in _steppable())
-        if (e.id != _keyed) e,
+        if (e.id != from) e,
     ];
-    if (events.isEmpty) {
-      setState(() => _keyed = null);
-      return;
-    }
+    if (events.isEmpty) return _unkey();
     _keyTo(later ? events.first : events.last);
   }
 
-  /// Highlights [event], scrolled into view if it isn't.
-  void _keyTo(Event event) {
-    setState(() => _keyed = event.id);
-    if (!_scroll.hasClients) return;
+  /// Where [event] starts on the timeline: at the day's midnight, if
+  /// it starts before.
+  double _startOffset(Event event) =>
+      _offset(event.start.isBefore(_day) ? _day : event.start);
+
+  /// Whether [event] starts in the timeline's view -- not right at its
+  /// top or foot -- as one highlighted is kept.
+  bool _startsInView(Event event) {
+    if (!_scroll.hasClients) return false;
     final position = _scroll.position;
-    final start = event.start.isBefore(_day) ? _day : event.start;
-    final y = _offset(start);
+    final y = _startOffset(event);
+    return y >= position.pixels + 24 &&
+        y <= position.pixels + position.viewportDimension - 96;
+  }
+
+  /// Whether any of [event] shows in the timeline's view.
+  bool _showsInView(Event event) {
+    if (!_scroll.hasClients) return false;
+    final position = _scroll.position;
+    final end = event.end.isAfter(_dayEnd) ? _dayEnd : event.end;
+    return _startOffset(event) < position.pixels + position.viewportDimension &&
+        _offset(end) > position.pixels;
+  }
+
+  /// Highlights [event] -- focuses it -- scrolled into view if it isn't.
+  void _keyTo(Event event) {
+    _eventNode(event)?.requestFocus();
+    if (!_scroll.hasClients || _startsInView(event)) return;
+    final position = _scroll.position;
+    final y = _startOffset(event);
     final view = position.viewportDimension;
-    if (y >= position.pixels + 24 && y <= position.pixels + view - 96) return;
     _scroll.animateTo(
       (y - view / 3).clamp(0, position.maxScrollExtent),
       duration: const Duration(milliseconds: 200),
@@ -3373,7 +3441,7 @@ class _EventsScreenState extends State<EventsScreen> {
       return;
     }
     if (_modes.isNotEmpty) return _leaveMode();
-    setState(() => _keyed = null);
+    _unkey();
   }
 
   /// What ✓ does: with just the one cursor and events on the cancel
@@ -3397,14 +3465,16 @@ class _EventsScreenState extends State<EventsScreen> {
       const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
       () => _keyStep(later: false),
     ),
-    HotkeyBinding(
-      const HotkeyTrigger.key(LogicalKeyboardKey.home),
-      () => _keyEnd(last: false),
-    ),
-    HotkeyBinding(
-      const HotkeyTrigger.key(LogicalKeyboardKey.end),
-      () => _keyEnd(last: true),
-    ),
+    for (final trigger in const [
+      HotkeyTrigger.key(LogicalKeyboardKey.home),
+      HotkeyTrigger.shift(LogicalKeyboardKey.keyJ),
+    ])
+      HotkeyBinding(trigger, () => _keyEnd(last: false)),
+    for (final trigger in const [
+      HotkeyTrigger.key(LogicalKeyboardKey.end),
+      HotkeyTrigger.shift(LogicalKeyboardKey.keyK),
+    ])
+      HotkeyBinding(trigger, () => _keyEnd(last: true)),
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.enter),
       _keyEnter,
@@ -5792,6 +5862,12 @@ class _EventsScreenState extends State<EventsScreen> {
     final today = widget.clock();
     // Back leaves the top mode, as ✕ does, before it leaves the page.
     final modes = _modes;
+    if (!_pruning) {
+      _pruning = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _pruneEventNodes();
+      });
+    }
     // Stepped onto another day, once it's loaded.
     if (_keyedOnto != null && _eventsOn(_day) != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -7349,8 +7425,11 @@ class _EventsScreenState extends State<EventsScreen> {
                     : null,
                 faded: _moving?.id,
                 highlighted: _highlighted,
-                // Placing a note, the event it's in; or else J and K's.
-                keyed: _noteAt != null ? _noteInside?.id : _keyed,
+                // Placing a note, the event it's in.
+                keyed: _noteAt != null ? _noteInside?.id : null,
+                // The day shown's, not those beside it: J and K's, and
+                // Tab's.
+                focusNodeFor: shaded || day != _day ? null : _eventNode,
                 // While the box is up, what its cursors stop at.
                 pulseNotes: _snapsTo(SnapTo.notes),
                 pulseEdges: _snapsTo(SnapTo.events),

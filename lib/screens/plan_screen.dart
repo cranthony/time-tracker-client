@@ -816,14 +816,16 @@ class _PlanScreenState extends State<PlanScreen> {
         const HotkeyTrigger.key(LogicalKeyboardKey.keyK),
         () => step(false),
       ),
-      HotkeyBinding(
-        const HotkeyTrigger.key(LogicalKeyboardKey.home),
-        () => step(false, toEnd: true),
-      ),
-      HotkeyBinding(
-        const HotkeyTrigger.key(LogicalKeyboardKey.end),
-        () => step(true, toEnd: true),
-      ),
+      for (final trigger in const [
+        HotkeyTrigger.key(LogicalKeyboardKey.home),
+        HotkeyTrigger.shift(LogicalKeyboardKey.keyJ),
+      ])
+        HotkeyBinding(trigger, () => step(false, toEnd: true)),
+      for (final trigger in const [
+        HotkeyTrigger.key(LogicalKeyboardKey.end),
+        HotkeyTrigger.shift(LogicalKeyboardKey.keyK),
+      ])
+        HotkeyBinding(trigger, () => step(true, toEnd: true)),
       for (final (i, title) in panes.indexed)
         HotkeyBinding(
           HotkeyTrigger.key(_paneLetter(title)),
