@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.270.0
+
+- A trait's stories are written in Markdown: what they did, and why it's
+  the trait, are drawn with their bold, italics, lists and links -- on
+  the trait's page and in a proposal's stories -- and the story editor
+  says so under each. Where a story is a line, in an event's summary or
+  asking to delete it, its marks are dropped.
+
 ## 7.269.0
 
 - Shift+J and Shift+K go to the first and last item, as Home and End

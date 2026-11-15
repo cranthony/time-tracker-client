@@ -284,11 +284,50 @@ void main() {
       );
       expect(find.textContaining('Alex'), findsOneWidget);
       expect(find.textContaining('A stranger on the bus'), findsOneWidget);
-      expect(find.text('Why: Did it without being asked'), findsOneWidget);
+      expect(
+        find.text('Why: Did it without being asked', findRichText: true),
+        findsOneWidget,
+      );
       // Only the one at an event links to it.
       expect(find.text('The event'), findsOneWidget);
       await tester.tap(find.text('The event'));
       expect(opened, ['e1']);
+    });
+
+    testWidgets('draws what and why in Markdown', (tester) async {
+      await open(
+        tester,
+        examples: const [
+          TraitExample(
+            id: 'x3',
+            traitId: 'kind',
+            when: '2026-09-10',
+            personId: 'alex',
+            what: 'Carried **all** the shopping\n\n- up four floors',
+            why: 'Did it *unasked*',
+            version: 1,
+          ),
+        ],
+      );
+      final what = find.text('Carried all the shopping', findRichText: true);
+      expect(what, findsOneWidget);
+      var bold = false;
+      tester.widget<RichText>(what).text.visitChildren((span) {
+        if (span is TextSpan &&
+            span.text == 'all' &&
+            span.style?.fontWeight == FontWeight.w700) {
+          bold = true;
+        }
+        return true;
+      });
+      expect(bold, isTrue);
+      expect(find.text('up four floors', findRichText: true), findsOneWidget);
+      expect(find.text('•', findRichText: true), findsOneWidget);
+      expect(
+        find.text('Why: Did it unasked', findRichText: true),
+        findsOneWidget,
+      );
+      expect(find.textContaining('**'), findsNothing);
     });
 
     testWidgets('says when it has none', (tester) async {

@@ -48,6 +48,7 @@ import 'repeat_editor.dart';
 import 'share_dialog.dart';
 import 'time_zone_picker.dart';
 import 'trait_icon.dart';
+import 'trait_stories.dart';
 
 /// What a summary dialog closed with, when it wasn't just closed.
 sealed class SummaryOutcome<T> {
@@ -2756,7 +2757,7 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
                         Expanded(
                           child: Text(
                             '${traitsById[story.traitId]?.name ?? story.traitId}'
-                            ' · ${_storyWho(story)}: ${story.what}',
+                            ' · ${_storyWho(story)}: ${storyPlainText(story.what)}',
                             style: theme.textTheme.bodySmall,
                           ),
                         ),

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
+import '../models/text_format.dart';
 import '../models/trait.dart';
 import '../models/trait_example.dart';
 import 'error_sheet.dart';
+import 'event_description.dart';
 import 'trait_example_dialog.dart';
 
 /// Where a trait's stories come from and go, for [TraitStoriesSection].
@@ -52,6 +54,29 @@ String storyWho(TraitExample example, PeopleList? people) {
     (null, final who?) => who,
     _ => '',
   };
+}
+
+/// A story's [text] -- what was done, or why it's the trait -- as plain
+/// text on a line, for a summary: its Markdown's marks dropped.
+String storyPlainText(String text) =>
+    descriptionText(text, format: TextFormat.markdown).replaceAll('\n', ' ');
+
+/// What [example] says was done, then why it's the trait, each in the
+/// Markdown it's written in: bold, italics, lists, links.
+class StoryText extends StatelessWidget {
+  const StoryText(this.example, {super.key});
+
+  final TraitExample example;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      EventDescription(example.what, format: TextFormat.markdown),
+      const SizedBox(height: 4),
+      EventDescription('*Why:* ${example.why}', format: TextFormat.markdown),
+    ],
+  );
 }
 
 /// [trait]'s stories -- examples of someone embodying it well -- newest
@@ -115,7 +140,8 @@ class _TraitStoriesSectionState extends State<TraitStoriesSection> {
         title: const Text('Delete this story?'),
         content: Text(
           '${storyWho(example, widget.stories.people)}, ${example.when}: '
-          "${example.what}\n\nThis can't be undone.",
+          '${storyPlainText(example.what)}'
+          "\n\nThis can't be undone.",
         ),
         actions: [
           TextButton(
@@ -197,14 +223,7 @@ class _TraitStoriesSectionState extends State<TraitStoriesSection> {
                             style: muted,
                           ),
                           const SizedBox(height: 4),
-                          Text(example.what, style: theme.textTheme.bodyMedium),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Why: ${example.why}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
+                          StoryText(example),
                           if (example.eventId != null &&
                               widget.stories.openEvent != null)
                             Align(
