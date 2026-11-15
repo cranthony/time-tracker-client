@@ -219,6 +219,18 @@ class Hotkey {
         'round all of them; Enter opens it, and Esc leaves them',
     HotkeyPlace.events,
   );
+  static const reviewNext = Hotkey(
+    'N',
+    "In a proposal's review, go to the next thing not yet reviewed, as "
+        'Next does; once all have been, it confirms nothing -- that stays '
+        'its button',
+    HotkeyPlace.events,
+  );
+  static const reviewPrevious = Hotkey(
+    'P / Shift+N',
+    "In a proposal's review, go back to the thing before",
+    HotkeyPlace.events,
+  );
   static const pickDay = Hotkey(
     'D',
     'Pick a day to go to, in the date picker',
@@ -448,6 +460,8 @@ class Hotkey {
     overdueGoals,
     upcomingGoals,
     tabGoals,
+    reviewNext,
+    reviewPrevious,
     pickDay,
     create,
     moveCursor,
@@ -509,11 +523,15 @@ class HotkeyTrigger {
   /// [key] alone; held, it repeats.
   const HotkeyTrigger.key(this.key) : _kind = _Kind.key;
 
+  /// Shift and [key], which, like [HotkeyTrigger.key], works only while
+  /// no text field has focus.
+  const HotkeyTrigger.shift(this.key) : _kind = _Kind.shift;
+
   final LogicalKeyboardKey key;
   final _Kind _kind;
 }
 
-enum _Kind { ctrl, afterCtrlB, key }
+enum _Kind { ctrl, afterCtrlB, key, shift }
 
 /// What a [HotkeyBinding] does while something -- a dialog, another
 /// page -- is over the page it's on.
@@ -750,7 +768,12 @@ class Hotkeys extends NavigatorObserver with ChangeNotifier {
       if (down) binding.onPressed();
       return KeyEventResult.handled;
     }
-    if (keyboard.isShiftPressed) return KeyEventResult.ignored;
+    if (keyboard.isShiftPressed) {
+      final shifted = _find(_Kind.shift, key);
+      if (shifted == null) return KeyEventResult.ignored;
+      shifted.onPressed();
+      return KeyEventResult.handled;
+    }
     final binding = _find(_Kind.key, key);
     if (binding != null) {
       binding.onPressed();

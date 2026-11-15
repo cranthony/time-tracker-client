@@ -951,6 +951,34 @@ class _EventsScreenState extends State<EventsScreen> {
     if (next != null) _goToStep(next);
   }
 
+  /// N: Next, while there's more to review; once all has been, it says
+  /// so, and confirms nothing -- that's left to the button.
+  void _keyReviewNext() {
+    if (_proposalBusy) return;
+    final next = nextToReview(
+      _reviewSteps,
+      _reviewSeen,
+      current: _shownStepKey,
+    );
+    if (next == null) {
+      HotkeyScope.maybeOf(context)
+          ?.say('All reviewed: confirm it with its Confirm button');
+      return;
+    }
+    _goToStep(next);
+  }
+
+  /// P, or Shift+N: back to what was reviewed before what's shown.
+  void _keyReviewPrevious() {
+    if (_proposalBusy) return;
+    final previous = previousToReview(_reviewSteps, current: _shownStepKey);
+    if (previous == null) {
+      HotkeyScope.maybeOf(context)?.say('Nothing before this to review');
+      return;
+    }
+    _goToStep(previous);
+  }
+
   /// The first of [page]'s steps not yet reviewed, or else its first.
   void _reviewPage(ProposalDetailPage page) {
     final mine = [
@@ -3383,6 +3411,21 @@ class _EventsScreenState extends State<EventsScreen> {
       () => _scrollByKey(later: true),
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
+    // A proposal's review, while it has anything to: back and on.
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyN),
+      _keyReviewNext,
+      when: () => _reviewSteps.isNotEmpty,
+    ),
+    for (final trigger in const [
+      HotkeyTrigger.key(LogicalKeyboardKey.keyP),
+      HotkeyTrigger.shift(LogicalKeyboardKey.keyN),
+    ])
+      HotkeyBinding(
+        trigger,
+        _keyReviewPrevious,
+        when: () => _reviewSteps.isNotEmpty,
+      ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), _pickDay),
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyG),

@@ -384,10 +384,13 @@ class ProposalBar extends StatelessWidget {
                 else if (guided)
                   Tooltip(
                     message: nextTooltip ?? 'Next to review',
-                    child: FilledButton(
-                      onPressed: busy ? null : onNext,
-                      style: _compact,
-                      child: const Text('Next'),
+                    child: HotkeyHint(
+                      Hotkey.reviewNext,
+                      child: FilledButton(
+                        onPressed: busy ? null : onNext,
+                        style: _compact,
+                        child: const Text('Next'),
+                      ),
                     ),
                   )
                 else
