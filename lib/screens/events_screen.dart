@@ -962,10 +962,31 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (next == null) {
       HotkeyScope.maybeOf(context)
-          ?.say('All reviewed: confirm it with its Confirm button');
+          ?.say('All reviewed: Ctrl+Enter to confirm it');
       return;
     }
     _goToStep(next);
+  }
+
+  /// Ctrl+Enter: confirms the open proposal, as its Confirm does --
+  /// asked first -- or says why it can't be.
+  void _keyConfirm() {
+    final proposal = _proposal;
+    if (proposal == null || _proposalBusy) return;
+    final say = HotkeyScope.maybeOf(context)?.say;
+    if (widget.eventOutbox?.closing(proposal.id) != null) {
+      return say?.call('It is already waiting to save');
+    }
+    if (proposal.state == ProposalState.applying) {
+      return say?.call('Applying it stopped partway: Retry to finish');
+    }
+    if (proposal.openFeedback.isNotEmpty) {
+      return say?.call('Waiting for Claude to answer your notes');
+    }
+    if (!proposal.confirmable) {
+      return say?.call("It can't be confirmed as it is");
+    }
+    unawaited(_confirmProposal());
   }
 
   /// P, or Shift+N: back to what was reviewed before what's shown.
@@ -3411,6 +3432,11 @@ class _EventsScreenState extends State<EventsScreen> {
       () => _scrollByKey(later: true),
     ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyT), _goToNow),
+    HotkeyBinding(
+      const HotkeyTrigger.ctrl(LogicalKeyboardKey.enter),
+      _keyConfirm,
+      when: () => _proposal != null,
+    ),
     // A proposal's review, while it has anything to: back and on.
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyN),
@@ -5249,7 +5275,28 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Confirms the open proposal, as shown.
-  Future<void> _confirmProposal() async {
+  /// Asks whether to confirm the open proposal -- unless that's been
+  /// [asked] already -- then confirms it.
+  Future<void> _confirmProposal({bool asked = false}) async {
+    final proposal = _proposal;
+    if (proposal == null) return;
+    if (!asked) {
+      final steps = _reviewSteps;
+      final unreviewed = [
+        for (final page in guidedPages)
+          if (steps
+                  .where((s) => s.page == page && !_reviewSeen.contains(s.key))
+                  .length
+              case final n when n > 0)
+            (reviewPageName(page), n),
+      ];
+      final yes = await showConfirmProposalDialog(
+        context,
+        proposal,
+        unreviewed: unreviewed,
+      );
+      if (!yes || !mounted || _proposal?.id != proposal.id) return;
+    }
     final waiting = [
       for (final w
           in widget.eventOutbox?.pending ?? const <PendingEventWrite>[])
@@ -5375,7 +5422,8 @@ class _EventsScreenState extends State<EventsScreen> {
             for (final id in again.changedSince) again.event(id)?.summary ?? id,
           ],
         );
-        if (confirm && mounted) await _confirmProposal();
+        // Asked, in the dialog: not again.
+        if (confirm && mounted) await _confirmProposal(asked: true);
       case ProposalOutcomeStatus.rebuilt:
         setState(() => _proposal = next ?? _proposal);
         unawaited(_loadProposal());

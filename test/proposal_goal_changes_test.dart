@@ -491,6 +491,14 @@ void main() {
       };
       await tester.tap(find.text('Confirm'));
       await tester.pumpAndSettle();
+      // Asked first.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Confirm'),
+        ),
+      );
+      await tester.pumpAndSettle();
       expect(
         memory.goals!.singleWhere((g) => g.id == 'fence').status,
         'missed',
@@ -786,6 +794,14 @@ void main() {
         ],
       );
       await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      // Asked first.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Confirm'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Confirmed, with warnings'), findsOneWidget);
       expect(find.textContaining("fence (missed) wasn't made"), findsOneWidget);

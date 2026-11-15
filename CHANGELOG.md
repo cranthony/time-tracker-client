@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.267.0
+
+- Confirming a proposal asks first, from either Confirm: what confirming
+  does, and how much of it isn't yet reviewed, by section. Confirm, or
+  Ctrl+Enter, goes ahead; Back, Esc or U doesn't. Confirm again, after
+  the calendar changed, isn't asked twice.
+- On the Events page, Ctrl+Enter confirms the open proposal -- asked
+  first -- or says why it can't be. Holding Ctrl shows it on Confirm.
+
 ## 7.266.0
 
 - Guided review by key, on the Events page: N goes to the next thing to

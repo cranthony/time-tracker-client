@@ -1115,6 +1115,21 @@ void main() {
       matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
     );
 
+    /// Confirms it: its Confirm, then -- asked first -- the dialog's.
+    Future<void> confirmIt(WidgetTester tester) async {
+      await tester.ensureVisible(confirmButton);
+      await tester.pumpAndSettle();
+      await tester.tap(confirmButton);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Confirm'),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
     /// [proposalJson] with two stories of traits done well: one Claude's at
     /// the tea, by someone in People; one by someone else, at no event.
     Map<String, Object?> withStories() => {
@@ -1356,8 +1371,7 @@ void main() {
         'it, even once the proposal is gone', (tester) async {
       await open(tester, queued: true);
 
-      await tester.tap(confirmButton);
-      await tester.pumpAndSettle();
+      await confirmIt(tester);
       expect(proposals.calls, isNot(contains('confirm_proposal')));
       expect(
         find.textContaining('“Confirm what happened” is waiting to save'),
@@ -1388,8 +1402,7 @@ void main() {
       );
       await tester.pump(const Duration(seconds: 1));
 
-      await tester.tap(confirmButton);
-      await tester.pumpAndSettle();
+      await confirmIt(tester);
       unawaited(outbox!.flush(ignoreBackoff: true));
       await tester.pumpAndSettle();
       expect(find.byType(ProposalBar), findsNothing);
@@ -1604,7 +1617,10 @@ void main() {
       // Work's as planned: plain.
       expect(timeline.marks['work']!.label, isNull);
       expect(timeline.marks.containsKey('talk'), isFalse);
-      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNotNull);
+      expect(
+        tester.widget<ButtonStyleButton>(confirmButton).onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('shows a note under the bar -- the first to review -- '
@@ -2411,13 +2427,16 @@ void main() {
       await tester.tap(find.text('Withdraw'));
       await tester.pumpAndSettle();
       expect(proposals.calls, contains('withdraw_proposal_note'));
-      expect(tester.widget<ButtonStyleButton>(confirmButton).onPressed, isNotNull);
+      expect(
+        tester.widget<ButtonStyleButton>(confirmButton).onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('confirming applies it: the band goes, the calendar is as '
         'it said', (tester) async {
       await open(tester);
-      await tap(tester, confirmButton);
+      await confirmIt(tester);
       expect(proposals.calls, contains('confirm_proposal'));
       expect(
         find.text('Confirmed: what happened 8:00 AM – 12:00 PM is recorded.'),
@@ -2455,7 +2474,7 @@ void main() {
           proposal: proposals.proposal,
         );
       };
-      await tap(tester, confirmButton);
+      await confirmIt(tester);
       expect(find.text('The calendar changed'), findsOneWidget);
       expect(inDialog(find.text('• Work')), findsOneWidget);
       await tester.tap(find.text('Confirm again'));
@@ -2476,7 +2495,7 @@ void main() {
         proposals.proposal!,
         const ProposalEdits(asPlanned: ['walk']),
       );
-      await tap(tester, confirmButton);
+      await confirmIt(tester);
       expect(
         find.text(
           'It changed since you looked: this is revision 3. Review it, '
@@ -2501,7 +2520,7 @@ void main() {
         message: 'Work was deleted from the calendar.',
         proposal: proposal,
       );
-      await tap(tester, confirmButton);
+      await confirmIt(tester);
       expect(find.text('Claude needs to look at it'), findsOneWidget);
       expect(find.text('Work was deleted from the calendar.'), findsOneWidget);
     });
