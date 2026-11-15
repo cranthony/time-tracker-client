@@ -39,6 +39,9 @@ Future<TraitExample?> showTraitExampleDialog(
   ),
 );
 
+/// Under a story's text: it's written in Markdown.
+const _markdownHelp = 'Markdown: **bold**, *italics*, - lists, [links](…)';
+
 class _StoryDialog extends StatefulWidget {
   const _StoryDialog({
     required this.trait,
@@ -256,7 +259,10 @@ class _StoryDialogState extends State<_StoryDialog> {
                 minLines: 2,
                 maxLines: 6,
                 maxLength: exampleTextMaxLength,
-                decoration: const InputDecoration(labelText: 'What they did'),
+                decoration: const InputDecoration(
+                  labelText: 'What they did',
+                  helperText: _markdownHelp,
+                ),
               ),
               TextField(
                 controller: _why,
@@ -265,6 +271,7 @@ class _StoryDialogState extends State<_StoryDialog> {
                 maxLength: exampleTextMaxLength,
                 decoration: InputDecoration(
                   labelText: 'Why it is ${widget.trait.name.toLowerCase()}',
+                  helperText: _markdownHelp,
                 ),
               ),
               if (widget.eventsOn != null)

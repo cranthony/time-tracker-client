@@ -5,6 +5,7 @@ import '../models/proposal.dart';
 import '../models/proposed_stories.dart';
 import '../models/trait.dart';
 import 'trait_icon.dart';
+import 'trait_stories.dart';
 
 /// Shows the stories of traits done well that the proposal [current]
 /// gives adds once it's confirmed -- each by its trait's icon and name,
@@ -198,14 +199,7 @@ class _StoryCard extends StatelessWidget {
                       style: muted,
                     ),
                     const SizedBox(height: 4),
-                    Text(example.what, style: theme.textTheme.bodyMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Why: ${example.why}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
+                    StoryText(example),
                     if (event case final event?)
                       Padding(
                         padding: const EdgeInsets.only(top: 4),
