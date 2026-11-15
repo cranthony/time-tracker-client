@@ -7,6 +7,7 @@ import '../models/trait_example.dart';
 import '../services/server_errors.dart';
 import 'day_picker.dart';
 import 'hotkeys.dart';
+import 'people_picker.dart';
 
 /// An event a story can be linked to: its id, and how it's named.
 typedef StoryEvent = ({String id, String label});
@@ -38,10 +39,6 @@ Future<TraitExample?> showTraitExampleDialog(
   ),
 );
 
-/// Who a story's [TraitExample.personId] is not, in the picker: someone
-/// not in People, named in words.
-const _someoneElse = '';
-
 class _StoryDialog extends StatefulWidget {
   const _StoryDialog({
     required this.trait,
@@ -67,9 +64,16 @@ class _StoryDialogState extends State<_StoryDialog> {
   late DateTime _when =
       DateTime.tryParse(widget.example?.when ?? '') ??
       DateUtils.dateOnly(widget.clock());
-  late String _personId =
-      widget.example?.personId ??
-      (widget.example == null ? selfPersonId : _someoneElse);
+
+  /// Who did it, if they're in People -- a person, a community, or Self;
+  /// null for no one picked, who's then said in words.
+  late String? _personId = widget.example == null
+      ? selfPersonId
+      : widget.example!.personId;
+
+  /// The name of whoever was picked, as the picker gave it: someone just
+  /// added isn't in [_StoryDialog.people].
+  String? _pickedName;
   late final _who = TextEditingController(text: widget.example?.who);
   late final _what = TextEditingController(text: widget.example?.what);
   late final _why = TextEditingController(text: widget.example?.why);
@@ -94,20 +98,44 @@ class _StoryDialogState extends State<_StoryDialog> {
 
   void _loadEvents() => _events = widget.eventsOn?.call(_when);
 
-  /// Everyone it can be by: Self, then each active person, then each
-  /// community -- and whoever it's by now, even if they're not.
-  Map<String, String> get _whoChoices {
+  /// [_personId]'s name.
+  String? get _personName {
     final people = widget.people;
-    return {
-      selfPersonId: people == null ? 'Me' : personName(people.self),
-      for (final p in people?.people ?? const <Person>[])
-        if (!p.isSelf && p.active) p.id: personName(p),
-      for (final c in people?.circles ?? const <Circle>[])
-        if (c.isCommunity) c.id: circleName(c),
-      if (widget.example?.personId case final id? when id != selfPersonId)
-        id: people?.names[id] ?? id,
-      _someoneElse: 'Someone else',
+    return switch (_personId) {
+      null => null,
+      selfPersonId => people == null ? 'Me' : personName(people.self),
+      final id =>
+        _pickedName ??
+            people?.names[id] ??
+            people?.circles
+                .where((c) => c.id == id)
+                .map(circleName)
+                .firstOrNull ??
+            id,
     };
+  }
+
+  /// Picks who did it, one person or community, in the people picker.
+  Future<void> _pickWho() async {
+    final picked = await pickPersonOrCircle(
+      context,
+      title: 'Who did it',
+      communitiesOnly: true,
+      picked: _personId,
+    );
+    if (!mounted) return;
+    switch (picked) {
+      case final Person p:
+        setState(() {
+          _personId = p.id;
+          _pickedName = p.isSelf ? null : personName(p);
+        });
+      case final Circle c:
+        setState(() {
+          _personId = c.id;
+          _pickedName = circleName(c);
+        });
+    }
   }
 
   static String _day(DateTime day) =>
@@ -119,7 +147,7 @@ class _StoryDialogState extends State<_StoryDialog> {
     id: widget.example?.id,
     traitId: widget.trait.id ?? '',
     when: _day(_when),
-    personId: _personId == _someoneElse ? null : _personId,
+    personId: _personId,
     who: switch (_who.text.trim()) {
       '' => null,
       final who => who,
@@ -174,7 +202,6 @@ class _StoryDialogState extends State<_StoryDialog> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final choices = _whoChoices;
     return SaveHotkey(
       onSave: _saving ? null : _save,
       child: AlertDialog(
@@ -198,29 +225,32 @@ class _StoryDialogState extends State<_StoryDialog> {
                 subtitle: const Text('When it happened'),
                 onTap: _pickDay,
               ),
-              DropdownButtonFormField<String>(
-                initialValue: choices.containsKey(_personId)
-                    ? _personId
-                    : _someoneElse,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Who did it'),
-                items: [
-                  for (final MapEntry(:key, :value) in choices.entries)
-                    DropdownMenuItem(value: key, child: Text(value)),
-                ],
-                onChanged: (id) =>
-                    setState(() => _personId = id ?? _someoneElse),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.person_outline),
+                title: Text(_personName ?? 'No one picked'),
+                subtitle: const Text('Who did it (optional)'),
+                onTap: _pickWho,
+                trailing: _personId == null
+                    ? null
+                    : IconButton(
+                        tooltip: 'No one: say who in words',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(() {
+                          _personId = null;
+                          _pickedName = null;
+                        }),
+                      ),
               ),
-              if (_personId == _someoneElse || _who.text.isNotEmpty)
-                TextField(
-                  controller: _who,
-                  decoration: InputDecoration(
-                    labelText: _personId == _someoneElse
-                        ? 'Who, in words'
-                        : 'Who, in words (optional)',
-                    hintText: 'A stranger on the train',
-                  ),
+              TextField(
+                controller: _who,
+                decoration: InputDecoration(
+                  labelText: _personId == null
+                      ? 'Who, in words'
+                      : 'Who, in words (optional)',
+                  hintText: 'A stranger on the train',
                 ),
+              ),
               TextField(
                 controller: _what,
                 minLines: 2,

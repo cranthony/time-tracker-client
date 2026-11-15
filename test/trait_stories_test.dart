@@ -9,6 +9,7 @@ import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/traits_repository.dart';
 import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
+import 'package:time_tracker_client/widgets/people_picker.dart';
 import 'package:time_tracker_client/widgets/trait_icon.dart';
 import 'package:time_tracker_client/widgets/trait_stories.dart';
 
@@ -240,24 +241,28 @@ void main() {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(brightness: Brightness.dark),
-          home: TraitScreen(
-            trait: _kind,
-            stories: TraitStories(
-              load: (id) => repository.examples(traitId: id),
-              save: (example, before) => before == null
-                  ? repository.createExample(example)
-                  : repository.updateExample(
-                      before,
-                      example.changesFrom(before),
-                    ),
-              delete: repository.deleteExample,
-              people: _people,
-              eventsOn: (day) async => [
-                (id: 'e7', label: '9:00 AM Walk to the park'),
-              ],
-              openEvent: (example) async => opened?.add(example.eventId!),
+        PlanMemoryScope(
+          // The people picker's people.
+          memory: PlanMemory()..people = _people,
+          child: MaterialApp(
+            theme: ThemeData(brightness: Brightness.dark),
+            home: TraitScreen(
+              trait: _kind,
+              stories: TraitStories(
+                load: (id) => repository.examples(traitId: id),
+                save: (example, before) => before == null
+                    ? repository.createExample(example)
+                    : repository.updateExample(
+                        before,
+                        example.changesFrom(before),
+                      ),
+                delete: repository.deleteExample,
+                people: _people,
+                eventsOn: (day) async => [
+                  (id: 'e7', label: '9:00 AM Walk to the park'),
+                ],
+                openEvent: (example) async => opened?.add(example.eventId!),
+              ),
             ),
           ),
         ),
@@ -303,10 +308,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Say what they did.'), findsOneWidget);
 
+      // Who: Me, to start with; picked from People, one person.
+      expect(find.text('Me'), findsOneWidget);
       await tester.tap(find.text('Me'));
       await tester.pumpAndSettle();
+      expect(find.text('Who did it'), findsOneWidget);
       await tester.tap(find.text('Alex').last);
       await tester.pumpAndSettle();
+      expect(find.text('Who did it'), findsNothing);
+      expect(find.text('Alex'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextField, 'What they did'),
         'Fixed my bike',
@@ -337,10 +347,10 @@ void main() {
       await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
       expect(find.text('Edit story of Kind'), findsOneWidget);
-      await tester.tap(find.text('Alex').last);
+      // No one from People: only who, in words.
+      await tester.tap(find.byTooltip('No one: say who in words'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Someone else').last);
-      await tester.pumpAndSettle();
+      expect(find.text('No one picked'), findsOneWidget);
       await tester.enterText(
         find.widgetWithText(TextField, 'Who, in words'),
         'The neighbour downstairs',
@@ -365,6 +375,49 @@ void main() {
       expect(await repository.examples(), isEmpty);
       expect(find.textContaining('None yet'), findsOneWidget);
     });
+  });
+
+  testWidgets("a story's who is picked from People: a person, Self or a "
+      'community, not a plain circle', (tester) async {
+    Object? picked;
+    await tester.pumpWidget(
+      PlanMemoryScope(
+        memory: PlanMemory()
+          ..people = const PeopleList(
+            people: [
+              Person(id: selfPersonId, name: 'Me'),
+              Person(id: 'alex', name: 'Alex'),
+            ],
+            circles: [
+              Circle(id: 'c1', name: 'Book club'),
+              Circle(
+                id: 'c2',
+                name: 'The neighbourhood',
+                kind: CircleKind.community,
+              ),
+            ],
+          ),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => picked = await pickPersonOrCircle(
+                context,
+                title: 'Who did it',
+                communitiesOnly: true,
+              ),
+              child: const Text('Pick'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Pick'));
+    await tester.pumpAndSettle();
+    expect(find.text('Communities'), findsOneWidget);
+    expect(find.text('Book club'), findsNothing);
+    await tester.tap(find.text('The neighbourhood'));
+    await tester.pumpAndSettle();
+    expect((picked as Circle).id, 'c2');
   });
 
   testWidgets("an event's dialog shows the stories at it, each by its "
