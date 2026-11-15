@@ -285,17 +285,20 @@ class ProposalBar extends StatelessWidget {
                           ? 'Waiting for Claude to answer your notes'
                           : 'Confirm $window happened as shown, without '
                                 'reviewing the rest',
-                      child: OutlinedButton.icon(
-                        onPressed: busy || !proposal.confirmable
-                            ? null
-                            : onConfirm,
-                        style: _small.copyWith(
-                          textStyle: WidgetStatePropertyAll(
-                            theme.textTheme.labelMedium,
+                      child: HotkeyHint(
+                        Hotkey.confirmProposal,
+                        child: OutlinedButton.icon(
+                          onPressed: busy || !proposal.confirmable
+                              ? null
+                              : onConfirm,
+                          style: _small.copyWith(
+                            textStyle: WidgetStatePropertyAll(
+                              theme.textTheme.labelMedium,
+                            ),
                           ),
+                          icon: const Icon(Icons.check, size: 16),
+                          label: const Text('Confirm'),
                         ),
-                        icon: const Icon(Icons.check, size: 16),
-                        label: const Text('Confirm'),
                       ),
                     ),
                   ),
@@ -398,12 +401,15 @@ class ProposalBar extends StatelessWidget {
                     message: open > 0
                         ? 'Waiting for Claude to answer your notes'
                         : 'Confirm $window happened as shown',
-                    child: FilledButton(
-                      onPressed: busy || !proposal.confirmable
-                          ? null
-                          : onConfirm,
-                      style: _compact,
-                      child: const Text('Confirm'),
+                    child: HotkeyHint(
+                      Hotkey.confirmProposal,
+                      child: FilledButton(
+                        onPressed: busy || !proposal.confirmable
+                            ? null
+                            : onConfirm,
+                        style: _compact,
+                        child: const Text('Confirm'),
+                      ),
                     ),
                   ),
                 if (!stopped)
@@ -913,6 +919,64 @@ class _NoteDialogState extends State<_NoteDialog> {
 /// Says the calendar changed since [proposal] was planned, so it was
 /// planned again: [message], and the events that changed ([names]).
 /// True to confirm it again, as it is now; else it's to be reviewed.
+/// Asks whether to confirm [proposal]: what confirming does, and what of
+/// it's [unreviewed] -- by section name, how many -- if any is. Confirm,
+/// or Ctrl+Enter, says yes; Back, Esc or U, no.
+Future<bool> showConfirmProposalDialog(
+  BuildContext context,
+  Proposal proposal, {
+  List<(String, int)> unreviewed = const [],
+}) async {
+  final window = windowLabel(context, proposal.windowStart, proposal.through);
+  final left = unreviewed.fold(0, (sum, s) => sum + s.$2);
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) => SaveHotkey(
+          onSave: () => Navigator.of(context).pop(true),
+          child: AlertDialog(
+            title: const Text('Confirm it?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$window becomes what happened, as shown, and what it '
+                  'adds is made.',
+                ),
+                if (left > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '$left not yet reviewed: '
+                    '${[for (final (name, n) in unreviewed) '$name $n'].join(', ')}.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              HotkeyHint(
+                Hotkey.discard,
+                child: TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Back'),
+                ),
+              ),
+              HotkeyHint(
+                Hotkey.save,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Confirm'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ) ??
+      false;
+}
+
 Future<bool> showRecheckedDialog(
   BuildContext context,
   Proposal proposal, {

@@ -392,12 +392,49 @@ void main() {
       await press(LogicalKeyboardKey.keyN);
       expect(proposals.calls, isNot(contains('confirm_proposal')));
       expect(
-        find.text('All reviewed: confirm it with its Confirm button'),
+        find.text('All reviewed: Ctrl+Enter to confirm it'),
         findsOneWidget,
       );
       // Said for a while, then gone.
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('Ctrl+Enter asks before confirming: Esc or U go back, '
+        'Ctrl+Enter again confirms', (tester) async {
+      await open(tester, hotkeys: Hotkeys());
+      Future<void> ctrlEnter() async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pumpAndSettle();
+      }
+
+      final asked = find.text('Confirm it?');
+      await ctrlEnter();
+      expect(asked, findsOneWidget);
+      // Only the first of what it adds has been shown.
+      expect(find.text('2 not yet reviewed: Added 2.'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(asked, findsNothing);
+
+      await ctrlEnter();
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyU);
+      await tester.pumpAndSettle();
+      expect(asked, findsNothing);
+      // The bar's Confirm asks too.
+      await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      expect(asked, findsOneWidget);
+      await tester.tap(find.text('Back'));
+      await tester.pumpAndSettle();
+      expect(proposals.calls, isNot(contains('confirm_proposal')));
+
+      await ctrlEnter();
+      await ctrlEnter();
+      expect(asked, findsNothing);
+      expect(proposals.calls, contains('confirm_proposal'));
     });
 
     testWidgets('turned to, the follow-through and added pages scroll the '
@@ -798,6 +835,14 @@ void main() {
         );
       };
       await tester.tap(find.text('Confirm'));
+      await tester.pumpAndSettle();
+      // Asked first.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Confirm'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(proposals.calls, contains('confirm_proposal'));
       await expectTeaAt(tester, 'The teahouse');

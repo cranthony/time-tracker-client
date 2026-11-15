@@ -226,6 +226,12 @@ class Hotkey {
         'its button',
     HotkeyPlace.events,
   );
+  static const confirmProposal = Hotkey(
+    'Ctrl+Enter',
+    'Confirm the open proposal, as its Confirm does: asked first, in a '
+        'dialog where Ctrl+Enter confirms, and Esc or U goes back',
+    HotkeyPlace.events,
+  );
   static const reviewPrevious = Hotkey(
     'P / Shift+N',
     "In a proposal's review, go back to the thing before",
@@ -462,6 +468,7 @@ class Hotkey {
     tabGoals,
     reviewNext,
     reviewPrevious,
+    confirmProposal,
     pickDay,
     create,
     moveCursor,
