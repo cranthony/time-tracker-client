@@ -49,11 +49,19 @@ const _circlePrefix = 'circle:';
 /// named as it's typed, and is picked; one long-pressed is edited.
 /// Returns the [Person] or [Circle] picked; null if it's dismissed. They
 /// come from [memory], by default the [PlanMemoryScope]'s.
+///
+/// With [communitiesOnly], the circles are only communities -- none can
+/// be added here, as a new circle isn't one. [picked], a person's or a
+/// circle's id, is marked as picked.
 Future<Object?> pickPersonOrCircle(
   BuildContext context, {
   required String title,
   PlanMemory? memory,
+  bool communitiesOnly = false,
+  String? picked,
 }) {
+  final circlesLabel = communitiesOnly ? 'Communities' : 'Circles';
+  final pickedId = picked;
   final repository = PeopleScope.of(context);
   memory ??= PlanMemoryScope.of(context);
   var people = knownPeople(repository, memory);
@@ -69,7 +77,8 @@ Future<Object?> pickPersonOrCircle(
         builder: (context, snapshot) {
           final list = snapshot.data ?? const PeopleList();
           final circles = {
-            for (final c in list.circles) '$_circlePrefix${c.id}': c,
+            for (final c in list.circles)
+              if (!communitiesOnly || c.isCommunity) '$_circlePrefix${c.id}': c,
           };
           final everyone = {
             for (final p in list.withSelf)
@@ -97,7 +106,12 @@ Future<Object?> pickPersonOrCircle(
               SegmentedButton<WhoShown>(
                 segments: [
                   for (final who in WhoShown.values)
-                    ButtonSegment(value: who, label: Text(who.label)),
+                    ButtonSegment(
+                      value: who,
+                      label: Text(
+                        who == WhoShown.circles ? circlesLabel : who.label,
+                      ),
+                    ),
                 ],
                 selected: {shown},
                 showSelectedIcon: false,
@@ -113,17 +127,23 @@ Future<Object?> pickPersonOrCircle(
                     if (shown != WhoShown.circles)
                       for (final p in everyone.values) personNode(p),
                   ],
-                  picked: const [],
+                  picked: [
+                    if (pickedId case final id?)
+                      circles.containsKey('$_circlePrefix$id')
+                          ? '$_circlePrefix$id'
+                          : id,
+                  ],
                   single: true,
                   autofocus: true,
                   search: search,
                   searchHint: switch (shown) {
-                    WhoShown.everyone => 'Search people and circles',
+                    WhoShown.everyone =>
+                      'Search people and ${circlesLabel.toLowerCase()}',
                     WhoShown.people => 'Search people',
-                    WhoShown.circles => 'Search circles',
+                    WhoShown.circles => 'Search ${circlesLabel.toLowerCase()}',
                   },
                   empty: switch (shown) {
-                    WhoShown.circles => 'No circles yet.',
+                    WhoShown.circles => 'No ${circlesLabel.toLowerCase()} yet.',
                     _ => 'No one yet.',
                   },
                   marker: (node) => Icon(switch (circles[node.id]) {
@@ -156,7 +176,9 @@ Future<Object?> pickPersonOrCircle(
                       ? null
                       : addPerson,
                   adds: [
-                    if (repository != null && shown != WhoShown.people)
+                    if (repository != null &&
+                        shown != WhoShown.people &&
+                        !communitiesOnly)
                       addCircle,
                   ],
                 ),

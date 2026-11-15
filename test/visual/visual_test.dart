@@ -413,6 +413,30 @@ void main() {
       );
     });
 
+    // A new story of a trait: who, picked from People -- Me, to start
+    // with -- or said in words.
+    testWidgets('trait_story_new ($mode)', (tester) async {
+      await render(
+        tester,
+        'trait_story_new',
+        plan(),
+        scoped: true,
+        then: () async {
+          await openPane(tester, 'Traits');
+          await tester.tap(find.text('Present'));
+          await tester.pumpAndSettle();
+          await tester.scrollUntilVisible(
+            find.text('Stories'),
+            300,
+            scrollable: find.byType(Scrollable).last,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(TextButton, 'Story'));
+          await tester.pumpAndSettle();
+        },
+      );
+    });
+
     // A person's page as it opens, and scrolled to what was cancelled.
     for (final (name, scrolled) in [
       ('person', false),

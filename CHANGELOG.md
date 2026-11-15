@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.268.0
+
+- A story's "Who did it" is picked in the people picker -- searched,
+  one person, Self or community; a plain circle can't do it -- rather
+  than scrolled to in a list. It's optional: with no one picked, who did
+  it is said in words, under it.
+
 ## 7.267.0
 
 - Confirming a proposal asks first, from either Confirm: what confirming
