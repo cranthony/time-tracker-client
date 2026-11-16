@@ -46,7 +46,10 @@ Future<Set<String>?> askFollowThrough(
           ),
           content: SizedBox(
             width: 420,
+            // Room on the right for the switches' hotkey badges, drawn
+            // just past their corner: else the list cuts them off.
             child: SingleChildScrollView(
+              padding: const EdgeInsets.only(right: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,

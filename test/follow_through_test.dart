@@ -137,6 +137,22 @@ void main() {
       expect(counted, {'b'});
     });
 
+    testWidgets('holding Ctrl shows each switch its digit, not cut off', (
+      tester,
+    ) async {
+      await ask(tester, () async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.pump(const Duration(seconds: 1));
+        final list = tester.getRect(find.byType(SingleChildScrollView));
+        for (final digit in ['1', '2']) {
+          final badge = tester.getRect(find.widgetWithText(HotkeyBadge, digit));
+          expect(list.intersect(badge), badge, reason: 'badge $digit');
+        }
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+        await tester.tap(find.text('Keep them'));
+      });
+    });
+
     testWidgets('kept, calls the change off', (tester) async {
       final counted = await ask(
         tester,
