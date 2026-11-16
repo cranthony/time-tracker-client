@@ -36,6 +36,7 @@ class ProposalEdits {
     this.traitExamples = const [],
     this.through,
     this.takenIn = const [],
+    this.followThrough = const [],
   });
 
   /// The calendar's events, as it has them, that the edits name but the
@@ -56,7 +57,14 @@ class ProposalEdits {
     traitExamples: traitExamples,
     through: through,
     takenIn: takenIn,
+    followThrough: followThrough,
   );
+
+  /// Whether each event the layer covers -- or the edits make it cover --
+  /// counts against follow-through, as the user said: only that. It
+  /// doesn't cancel the event, nor lock anything, and it's dropped if the
+  /// layer stops covering it (`amend_proposal`'s `follow_through`).
+  final List<({String eventId, bool countsAgainstFollowThrough})> followThrough;
 
   /// Where to extend the proposal to: later than its `through`, no later
   /// than now. Each note it takes in is added where it falls, unless
@@ -111,6 +119,7 @@ class ProposalEdits {
       additions.isEmpty &&
       goalChanges.isEmpty &&
       traitExamples.isEmpty &&
+      followThrough.isEmpty &&
       through == null;
 
   /// The ids and keys of the events they name, and the notes' ids.
@@ -119,6 +128,7 @@ class ProposalEdits {
     for (final c in cancels) c.eventId,
     ...asPlanned,
     for (final n in notes) n.noteId,
+    for (final f in followThrough) f.eventId,
   };
 
   /// As `amend_proposal` takes them -- or, [stored], as they're kept
@@ -183,6 +193,15 @@ class ProposalEdits {
     // Only when there are some: an older server still takes the rest.
     if (traitExamples.isNotEmpty)
       'trait_examples': [for (final e in traitExamples) e.toJson()],
+    // Only when there are some: an older server still takes the rest.
+    if (followThrough.isNotEmpty)
+      'follow_through': [
+        for (final f in followThrough)
+          {
+            'event_id': f.eventId,
+            'counts_against_follow_through': f.countsAgainstFollowThrough,
+          },
+      ],
   };
 
   /// Them as [toJson] wrote them, as they're kept waiting to be sent.
@@ -252,6 +271,14 @@ class ProposalEdits {
         for (final e in maps('trait_examples')) ?StoryEdit.fromJson(e),
       ],
       takenIn: [for (final e in maps('taken_in')) Event.fromJson(e)],
+      followThrough: [
+        for (final f in maps('follow_through'))
+          (
+            eventId: '${f['event_id']}',
+            countsAgainstFollowThrough:
+                f['counts_against_follow_through'] == true,
+          ),
+      ],
     );
   }
 
@@ -404,9 +431,10 @@ abstract class ProposalRepository {
   /// Records [edits] to [proposal], from its [Proposal.revision], and
   /// returns the new revision -- with, in [Proposal.replaced], Claude's
   /// newer changes they overrode. Refused, writing nothing, if an edit
-  /// names an event outside its window, the result overlaps, or it
-  /// changes history ([changesHistory]) without the user's approval
-  /// ([allowHistory]): nothing is moved to make room.
+  /// names an event outside its window, two decided events overlap, or
+  /// it changes history ([changesHistory]) without the user's approval
+  /// ([allowHistory]). What's decided is a layer over the rest: it cuts
+  /// and covers what's under it (see implyLayer).
   Future<Proposal> amend(
     Proposal proposal,
     ProposalEdits edits, {
@@ -672,6 +700,10 @@ class InMemoryProposalRepository implements ProposalRepository {
   /// a cancel the user says counts.
   final Map<String, List<String>> _followThrough;
 
+  /// The user's answers, by event id, to whether each event the layer
+  /// covers counts against follow-through: kept while it covers it.
+  final _answers = <String, bool>{};
+
   Proposal? _proposal;
 
   /// The notes as Claude had them, for putting back.
@@ -743,7 +775,13 @@ class InMemoryProposalRepository implements ProposalRepository {
   }) async {
     calls.add('amend_proposal');
     final current = _open();
-    final events = [...?current.events];
+    final through = switch (edits.through) {
+      final t? when t.isAfter(current.through) => t,
+      _ => current.through,
+    };
+    // Each where the plan had it, to edit; the layer's laid over them
+    // again once they're edited, as the server does.
+    final events = unimplied(current.events ?? const [], through);
     // The calendar's events they name, taken in as the server takes them.
     for (final e in edits.takenIn) {
       if (events.any((p) => p.id == e.id)) continue;
@@ -862,20 +900,44 @@ class InMemoryProposalRepository implements ProposalRepository {
         ),
       );
     }
+    for (final f in edits.followThrough) {
+      indexOf(f.eventId);
+      _answers[f.eventId] = f.countsAgainstFollowThrough;
+      changed.add(f.eventId);
+    }
     events.sort((a, b) => a.start.compareTo(b.start));
-    final live = [
+    // Two decided events may not overlap; the layer they make cuts and
+    // covers the rest.
+    final decided = [
       for (final e in events)
-        if (e.live) e,
+        if (e.live && e.decidedBy != null) e,
     ];
-    for (var i = 0; i + 1 < live.length; i++) {
-      if (live[i].end.isAfter(live[i + 1].start)) {
+    for (var i = 0; i + 1 < decided.length; i++) {
+      if (decided[i].end.isAfter(decided[i + 1].start)) {
         throw McpException(
-          'amend_proposal: "${live[i].summary}" and '
-          '"${live[i + 1].summary}" would overlap. Nothing is moved to make '
-          'room.',
+          'amend_proposal: "${decided[i].summary}" and '
+          '"${decided[i + 1].summary}" would overlap.',
         );
       }
     }
+    final layered = implyLayer(events, through, answers: _answers);
+    // An answer holds while the layer covers its event.
+    _answers.removeWhere(
+      (id, _) => !layered.any((e) => e.id == id && e.covered),
+    );
+    for (final e in layered) {
+      final was = current.event(e.id);
+      if (e.implied &&
+          (was == null ||
+              !was.start.isAtSameMomentAs(e.start) ||
+              !was.end.isAtSameMomentAs(e.end) ||
+              was.status != e.status)) {
+        changed.add(e.id);
+      }
+    }
+    events
+      ..clear()
+      ..addAll(layered);
     final notes = _editedNotes(current, events, edits);
     final (additions, settled) = await _settle(current, events, edits, changed);
     final (goalChanges, settledGoals) = await _settleGoals(current, edits);
@@ -888,10 +950,7 @@ class InMemoryProposalRepository implements ProposalRepository {
     _changed[revision] = changed;
     _proposal = current.copyWith(
       revision: revision,
-      through: switch (edits.through) {
-        final t? when t.isAfter(current.through) => t,
-        _ => null,
-      },
+      through: through,
       events: events,
       notes: notes,
       additions: additions,

@@ -3,6 +3,9 @@ import 'goal.dart';
 import 'goal_changes.dart';
 import 'proposed_stories.dart';
 import 'note.dart';
+import 'proposal_layer.dart';
+
+export 'proposal_layer.dart';
 
 /// Where a [Proposal] is: awaiting the user's review, or Claude's
 /// (while any note is open), being applied, applied, or given up.
@@ -82,6 +85,10 @@ class ProposalEvent {
     this.countsAgainstFollowThrough,
     this.followThrough = const [],
     this.revisited = false,
+    this.cutBy,
+    this.coveredBy,
+    this.cutBySummary,
+    this.coveredBySummary,
     this.properties = const {},
   });
 
@@ -131,6 +138,41 @@ class ProposalEvent {
   /// historical note -- one written for a time it covers: what happened at it
   /// can change, but not when.
   final bool revisited;
+
+  /// For an event no decision changed that the proposal's layer -- what's
+  /// decided -- runs into: the layer event (by id or key) that cut it
+  /// short, or split it ([cutBy]; a later piece of it is new, keyed
+  /// `<id>~N`), or covered it whole ([coveredBy]; it's cancelled), and
+  /// that event's summary. Worked out again on every revision, never
+  /// decided: none from a server before the layer.
+  final String? cutBy;
+  final String? coveredBy;
+  final String? cutBySummary;
+  final String? coveredBySummary;
+
+  /// Whether the layer cut it short, or split it.
+  bool get cut => cutBy != null;
+
+  /// Whether the layer covered it whole: it doesn't happen, as a cancel.
+  bool get covered => coveredBy != null;
+
+  /// Whether the layer cut or covered it: nothing decided it.
+  bool get implied => cut || covered;
+
+  /// What cut or covered it, as the user knows it: its summary, or else
+  /// its id.
+  String? get impliedByName => switch ((cutBy, coveredBy)) {
+    (final by?, _) => _named(cutBySummary, by),
+    (_, final by?) => _named(coveredBySummary, by),
+    _ => null,
+  };
+
+  static String _named(String? summary, String id) =>
+      summary != null && summary.trim().isNotEmpty ? summary : id;
+
+  /// Whether it's a later piece of an event the layer split, made when
+  /// the proposal's applied: `<id>~N`.
+  bool get splitPiece => id.contains('~');
 
   /// As the server sent it.
   final Map<String, Object?> properties;
@@ -193,6 +235,10 @@ class ProposalEvent {
         for (final f in json['follow_through'] as List? ?? []) '$f',
       ],
       revisited: json['revisited'] == true,
+      cutBy: json['cut_by'] as String?,
+      coveredBy: json['covered_by'] as String?,
+      cutBySummary: json['cut_by_summary'] as String?,
+      coveredBySummary: json['covered_by_summary'] as String?,
       properties: Map.unmodifiable(json),
     );
   }
@@ -216,6 +262,10 @@ class ProposalEvent {
     'counts_against_follow_through',
     'follow_through',
     'revisited',
+    'cut_by',
+    'covered_by',
+    'cut_by_summary',
+    'covered_by_summary',
   };
 
   /// It as an [Event], to show and edit like the calendar's: over
@@ -447,6 +497,7 @@ class Proposal {
     required this.windowStart,
     required this.through,
     this.claudeThrough,
+    this.sentLayerEnd,
     this.events,
     this.lastPlanned = false,
     this.problem,
@@ -467,6 +518,7 @@ class Proposal {
     this.replaced = const [],
     this.recap,
     this.factSummaries = const [],
+    this.calendarEdits = const [],
   });
 
   /// 12 hex digits.
@@ -490,6 +542,27 @@ class Proposal {
 
   /// Whether the user extended it past where Claude's revision ran to.
   bool get extended => claudeThrough?.isBefore(through) ?? false;
+
+  /// Where its layer ends, as the server said: null from a server before
+  /// the layer.
+  final DateTime? sentLayerEnd;
+
+  /// Where its layer ends: [through], or later where the last decided
+  /// event going on at [through] ends -- an end the user set past it. The
+  /// layer is drawn over the calendar from [windowStart] to here; past
+  /// it, events are the calendar's.
+  DateTime get layerEnd {
+    final worked = layerEndOf(events ?? const [], through);
+    return switch (sentLayerEnd) {
+      final sent? when sent.isAfter(worked) => sent,
+      _ => worked,
+    };
+  }
+
+  /// The calendar writes the user made by hand while it was open, around
+  /// its layer: abandoning it leaves them, and the dialog that asks
+  /// lists them. None from a server that doesn't say.
+  final List<CalendarEdit> calendarEdits;
 
   /// Whether [time] is in the stretch the user extended it by.
   bool inExtension(DateTime time) =>
@@ -564,8 +637,8 @@ class Proposal {
     return null;
   }
 
-  /// The cancelled events of what happened: each counting against
-  /// follow-through, or not.
+  /// The cancelled events of what happened -- those the layer covers
+  /// among them: each counting against follow-through, or not.
   List<ProposalEvent> get cancels => [
     for (final e in reviewed)
       if (e.status == ProposalEventStatus.cancelled) e,
@@ -684,6 +757,10 @@ class Proposal {
       final String t => DateTime.parse(t),
       _ => null,
     },
+    sentLayerEnd: switch (json['layer_end']) {
+      final String t => DateTime.tryParse(t),
+      _ => null,
+    },
     events: switch (json['events']) {
       final List events => [
         for (final e in events)
@@ -743,6 +820,10 @@ class Proposal {
       for (final s in json['fact_summaries'] as List? ?? const [])
         if (s is Map) ?ProposedSummary.fromJson(s.cast()),
     ],
+    calendarEdits: [
+      for (final e in json['calendar_edits'] as List? ?? const [])
+        if (e is Map) ?CalendarEdit.fromJson(e.cast()),
+    ],
   );
 
   Proposal copyWith({
@@ -772,6 +853,7 @@ class Proposal {
     through: through ?? this.through,
     // Claude's end, kept where the user extends it.
     claudeThrough: claudeThrough ?? this.through,
+    sentLayerEnd: sentLayerEnd,
     events: events ?? this.events,
     lastPlanned: lastPlanned ?? this.lastPlanned,
     problem: problem,
@@ -792,6 +874,7 @@ class Proposal {
     replaced: replaced ?? this.replaced,
     recap: recap,
     factSummaries: factSummaries,
+    calendarEdits: calendarEdits,
   );
 }
 

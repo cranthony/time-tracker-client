@@ -1082,6 +1082,8 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       // Said twice, a story's settled the same way.
       traitExamples: edits.traitExamples,
       through: edits.through,
+      // Said twice, an answer's the same.
+      followThrough: edits.followThrough,
     );
   }
 

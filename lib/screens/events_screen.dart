@@ -1634,8 +1634,11 @@ class _EventsScreenState extends State<EventsScreen> {
     if (_usesOf(added[i]).firstOrNull case final e?) _scrollToTime(e.start);
   }
 
-  /// Shows [event]: its day, scrolled to it, and it highlighted a moment.
-  void _showEvent(Event event) {
+  /// Shows [event]: its day, scrolled to it, and it highlighted a moment
+  /// -- where the page shows it: one the open proposal's layer cuts, at
+  /// its cut times, not where the calendar has it.
+  void _showEvent(Event requested) {
+    final event = _asShown(requested);
     _unhighlight?.cancel();
     setState(() {
       _askedToShow = true;
@@ -1648,6 +1651,21 @@ class _EventsScreenState extends State<EventsScreen> {
     _unhighlight = Timer(const Duration(seconds: 4), () {
       if (mounted) setState(() => _highlighted = null);
     });
+  }
+
+  /// [event], one of the calendar's, as the page shows it: as the open
+  /// proposal's layer leaves it -- cut, say -- if it's in it.
+  Event _asShown(Event event) {
+    final layered = _shownProposal?.event(event.id);
+    if (layered == null) return event;
+    final from = layered.start.isBefore(event.start)
+        ? layered.start
+        : event.start;
+    final to = layered.end.isAfter(event.end) ? layered.end : event.end;
+    return _withProposal([event], from, to)
+            .where((e) => e.id == event.id)
+            .firstOrNull ??
+        event;
   }
 
   /// Shows [time]'s day, scrolled to it; or, with none, now.
@@ -1709,10 +1727,11 @@ class _EventsScreenState extends State<EventsScreen> {
   List<Event> _waiting(List<Event> events, DateTime from, DateTime to) =>
       widget.eventOutbox?.project(events, from, to) ?? events;
 
-  /// [calendar], the calendar's events from [from] to [to], with those
-  /// that [proposal] -- the open one by default -- says happened as it
-  /// says: a new one added, and a cancelled one shown cancelled -- unless
-  /// another is in its place.
+  /// [calendar], the calendar's events from [from] to [to], with
+  /// [proposal]'s layer -- the open one's by default -- over them: those
+  /// it says happened as it says, a new one added, a cancelled one shown
+  /// cancelled -- unless another is in its place -- and those it cuts at
+  /// their cut times. Past the layer's end, the calendar's.
   List<Event> _withProposal(
     List<Event> calendar,
     DateTime from,
@@ -1720,7 +1739,12 @@ class _EventsScreenState extends State<EventsScreen> {
     Proposal? proposal,
   }) {
     proposal ??= _shownProposal;
-    final reviewed = proposal?.reviewed ?? const <ProposalEvent>[];
+    if (proposal == null) return calendar;
+    final layerEnd = proposal.layerEnd;
+    final reviewed = [
+      for (final e in proposal.reviewed)
+        if (e.start.isBefore(layerEnd) || e.implied) e,
+    ];
     if (reviewed.isEmpty) return calendar;
     final ids = {for (final e in reviewed) e.id};
     final byId = {for (final e in calendar) ?e.id: e};
@@ -1739,7 +1763,7 @@ class _EventsScreenState extends State<EventsScreen> {
         if (!ids.contains(e.id)) e,
       for (final e in here)
         if (e.live || !covered(e))
-          e.toEvent(byId[e.id], proposal?.addedNames ?? const {}),
+          e.toEvent(byId[e.id], proposal.addedNames),
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
@@ -1748,70 +1772,161 @@ class _EventsScreenState extends State<EventsScreen> {
   bool _inReview(Event event) =>
       _editedProposal?.event(event.id)?.reviewed ?? false;
 
-  /// Whether an event from [start] to [end] would be in what the open
-  /// proposal says happened.
-  bool _reviews(DateTime start, DateTime end) =>
-      _editedProposal?.covers(start, end) ?? false;
-
   /// How far past the open proposal's end an edit of it can reach: the
   /// calendar's events the server takes in, those it names, run to two
   /// days past it.
   static const _proposalReach = Duration(hours: 47);
 
-  /// Whether a write of [events] (those it changes or cancels) to [spans]
-  /// (what it leaves them, and any it creates, covering) goes through the
-  /// open proposal, as an edit of what happened: one of [events] is in
-  /// it, or a span is in its window -- or a span overlaps an event it
-  /// changed, there or where the calendar has it. The calendar would
-  /// refuse that write, as it still has the event where the plan did,
-  /// and the app shows it as the proposal has it: the proposal takes it,
-  /// taking in the calendar's events it names. One it can't take -- one
-  /// reaching before its window, or too far past it -- throws a
-  /// [ProposalEditException], to confirm the proposal first.
-  bool _throughProposal(
-    Iterable<Event> events,
-    Iterable<(DateTime, DateTime)> spans,
+  /// Whether an edit leaving an event starting at [start] goes to the open
+  /// proposal's layer, as an edit of what happened: it starts before the
+  /// proposal's `through`. Otherwise it's the calendar's -- the plan --
+  /// making room there as it does with no proposal open.
+  bool _inLayer(DateTime start) => switch (_editedProposal) {
+    final proposal? => start.isBefore(proposal.through),
+    null => false,
+  };
+
+  /// What the open proposal's layer has of [event], if it decided
+  /// anything about it: moved out of the layer, it's put back as planned
+  /// there, as the calendar write takes it.
+  ProposalEvent? _decidedOf(Event event) => switch (_editedProposal?.event(
+    event.id,
+  )) {
+    final e? when e.decidedBy != null => e,
+    _ => null,
+  };
+
+  /// [changes] to [event] that take it out of the open proposal's layer:
+  /// both its times, as shown, if its times change -- the layer's say on
+  /// it goes. Refused for one the layer makes, which the calendar hasn't.
+  Map<String, Object?> _outOfLayer(
+    Event event,
+    Map<String, Object?> changes,
   ) {
-    if (events.any(_inReview) || spans.any((s) => _reviews(s.$1, s.$2))) {
-      return true;
+    final decided = _decidedOf(event);
+    if (decided == null) return changes;
+    if (decided.status == ProposalEventStatus.created) {
+      throw ProposalEditException(
+        '${_named(event)} is new in what happened, so it starts before '
+        "${_timeOf(_editedProposal!.through)}. Drop it there, and add it "
+        'to the calendar instead.',
+      );
     }
-    final proposal = _editedProposal;
-    if (proposal == null) return false;
-    final ids = {for (final e in events) e.id};
-    bool overlaps((DateTime, DateTime) s, DateTime start, DateTime end) =>
-        s.$1.isBefore(end) && s.$2.isAfter(start);
-    final runInto =
-        [
-          for (final e in proposal.events ?? const <ProposalEvent>[])
-            if (!ids.contains(e.id) && e.changed) e,
-        ].where(
-          (e) => spans.any(
-            (s) =>
-                overlaps(s, e.start, e.end) ||
-                overlaps(s, e.plannedStart ?? e.start, e.plannedEnd ?? e.end),
-          ),
-        );
-    if (runInto.isEmpty) return false;
-    final reach = proposal.through.add(_proposalReach);
-    final taken = [
-      for (final e in events)
-        if (proposal.event(e.id) == null) (e.start, e.end),
-      ...spans,
-    ];
-    if (taken.every(
-      (s) => !s.$1.isBefore(proposal.windowStart) && !s.$2.isAfter(reach),
-    )) {
-      return true;
+    if (!changes.containsKey('start') && !changes.containsKey('end')) {
+      return changes;
     }
-    final names = _reviewedNames;
-    final named = [for (final e in runInto) '“${names[e.id] ?? e.id}”'];
-    throw ProposalEditException(
-      'This runs into ${named.join(', ')}, which the open proposal changes '
-      "but the calendar has as planned till it's confirmed -- and it "
-      "reaches too far outside the proposal's time to be made in it. "
-      'Confirm the proposal first, then make this change.',
+    return {
+      'start': localIsoTimestamp(event.start),
+      'end': localIsoTimestamp(event.end),
+      ...changes,
+    };
+  }
+
+  /// Puts what the open proposal's layer decided of [event] back as
+  /// planned, once it's moved out of it on the calendar; null if it
+  /// decided nothing of it.
+  Future<Proposal?> _leaveLayer(Event event) async {
+    if (_decidedOf(event) == null) return null;
+    return _amend(
+      ProposalEdits(asPlanned: [event.id!]),
+      label: 'Put ${_named(event)} back as planned, in what happened',
     );
   }
+
+  /// [time] as a time of day, as the app shows it.
+  String _timeOf(DateTime time) => MaterialLocalizations.of(
+    context,
+  ).formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
+
+  /// Saves [changes] to [event]: in the open proposal's layer, if it
+  /// starts before its `through` after them -- [onAmended] told of the
+  /// revision -- or else on the calendar, putting back as planned what
+  /// the layer decided of it. Returns what the calendar write changed.
+  Future<List<Event>> _saveUpdate(
+    Event event,
+    Map<String, Object?> changes,
+    void Function(Proposal amended) onAmended,
+  ) async {
+    final start = _timeIn(changes['start']) ?? event.start;
+    if (_inLayer(start)) {
+      onAmended(await _amendUpdate(event, changes));
+      return const [];
+    }
+    final writing = _outOfLayer(event, changes);
+    final written = await _approvingHistory(
+      at: event.start,
+      (allow) => _writes.update(event, writing, allowHistory: allow),
+    );
+    if (await _leaveLayer(event) case final amended?) onAmended(amended);
+    return written;
+  }
+
+  /// Cancels [event]: in the open proposal's layer, if it starts before
+  /// its `through`, or else on the calendar -- [counts] saying whether
+  /// that counts against follow-through.
+  Future<List<Event>> _saveCancel(
+    Event event,
+    bool counts,
+    void Function(Proposal amended) onAmended,
+  ) async {
+    if (_inLayer(event.start)) {
+      onAmended(await _amendCancel(event, counts));
+      return const [];
+    }
+    _outOfLayer(event, const {});
+    final written = await _approvingHistory(
+      at: event.start,
+      (allow) => _writes.cancel(
+        event,
+        countsAgainstFollowThrough: counts,
+        allowHistory: allow,
+      ),
+    );
+    if (await _leaveLayer(event) case final amended?) onAmended(amended);
+    return written;
+  }
+
+  /// What the box's [effect] does to the events in its way that's the
+  /// user's own doing, kept as edits in the layer: those it pushes, moved
+  /// whole, and the rest of one split to push. The rest -- what's
+  /// trimmed, and what's covered -- the layer implies.
+  static Overwrite _pushedOnly(BoxEffect? effect) {
+    if (effect == null) return const Overwrite();
+    final pushed = {
+      for (final (e, _, _, rest) in effect.pushed)
+        if (!rest) e.id,
+    };
+    final rests = [
+      for (final (_, from, to, rest) in effect.pushed)
+        if (rest) (from, to),
+    ];
+    final over = effect.overwrite;
+    return Overwrite(
+      updates: [
+        for (final (e, changes) in over.updates)
+          if (pushed.contains(e.id)) (e, changes),
+      ],
+      creates: [
+        for (final c in over.creates)
+          if (_spanOf(c) case (final from, final to)
+              when rests.any((r) => r.$1 == from && r.$2 == to))
+            c,
+      ],
+    );
+  }
+
+  /// Each of [covered] -- the events an edit of the layer runs right over
+  /// -- and whether it counts against follow-through, as the user said
+  /// ([counting]), for the amend that makes the edit.
+  /// Not those the layer decided: they're not covered, but in the way.
+  List<({String eventId, bool countsAgainstFollowThrough})> _answers(
+    List<Event> covered,
+    Set<String> counting,
+  ) => [
+    for (final e in covered)
+      if (e.id case final id? when _decidedOf(e) == null)
+        (eventId: id, countsAgainstFollowThrough: counting.contains(id)),
+  ];
 
   /// What [event] covers with [changes] made to it.
   static (DateTime, DateTime) _spanWith(
@@ -1831,28 +1946,6 @@ class _EventsScreenState extends State<EventsScreen> {
 
   static DateTime? _timeIn(Object? value) =>
       value is String ? DateTime.tryParse(value) : null;
-
-  /// The events [over] changes or cancels, and what it leaves them, and
-  /// those it creates, covering.
-  static (List<Event>, List<(DateTime, DateTime)>) _written(Overwrite over) => (
-    [for (final (e, _) in over.updates) e, ...over.cancels],
-    [
-      for (final (e, changes) in over.updates) _spanWith(e, changes),
-      for (final e in over.cancels) (e.start, e.end),
-      for (final c in over.creates) ?_spanOf(c),
-    ],
-  );
-
-  /// Whether writing [over] -- with [events] and [spans] besides -- goes
-  /// through the open proposal (see [_throughProposal]).
-  bool _overThroughProposal(
-    Overwrite over, {
-    Iterable<Event> events = const [],
-    Iterable<(DateTime, DateTime)> spans = const [],
-  }) {
-    final (written, covered) = _written(over);
-    return _throughProposal([...events, ...written], [...spans, ...covered]);
-  }
 
   /// [edits] of [proposal], with the calendar's events they name that it
   /// doesn't have yet, as the calendar has them: the server takes them
@@ -2980,39 +3073,17 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _openEvent(Event event) async {
     if (_saidReadOnly()) return;
     if (_inReview(event)) return _openReviewed(event);
-    // Edited in what happened, if it runs into what the proposal changed.
+    // Edited in the proposal's layer, if it starts before its `through`.
     Proposal? amended;
     final outcome = await showEventSummaryDialog(
       context,
       event,
       // What a proposal adds, named by its ref until it's made.
       additions: _proposal?.additions ?? const [],
-      save: (changes) async {
-        if (_throughProposal([event], [_spanWith(event, changes)])) {
-          amended = await _amendUpdate(event, changes);
-          return const [];
-        }
-        return _approvingHistory(
-          at: event.start,
-          (allow) => _writes.update(event, changes, allowHistory: allow),
-        );
-      },
+      save: (changes) => _saveUpdate(event, changes, (a) => amended = a),
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (counts) async {
-              if (_throughProposal([event], [(event.start, event.end)])) {
-                amended = await _amendCancel(event, counts);
-                return const [];
-              }
-              return _approvingHistory(
-                at: event.start,
-                (allow) => _writes.cancel(
-                  event,
-                  countsAgainstFollowThrough: counts,
-                  allowHistory: allow,
-                ),
-              );
-            },
+          : (counts) => _saveCancel(event, counts, (a) => amended = a),
       waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
       actions: _actionsById,
@@ -3035,25 +3106,29 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Opens [event], one in what the open proposal says happened, as
-  /// [_openEvent] does, its changes and its cancelling edits of the
-  /// proposal. One the proposal cancels can be put back as planned.
+  /// [_openEvent] does: its changes and its cancelling edits of the
+  /// proposal -- or, one that starts at or after its `through` after them
+  /// (one the layer cuts, say), of the calendar. One the proposal cancels
+  /// can be put back as planned.
   Future<void> _openReviewed(Event event) async {
     if (event.isCancelled) return _openCancelled(event);
     Proposal? amended;
+    // Whether it was saved on the calendar, out of the layer.
+    var onCalendar = false;
     final outcome = await showEventSummaryDialog(
       context,
       event,
       // What a proposal adds, named by its ref until it's made.
       additions: _proposal?.additions ?? const [],
-      save: (changes) async {
-        amended = await _amendUpdate(event, changes);
-        return const [];
+      save: (changes) {
+        onCalendar = !_inLayer(_timeIn(changes['start']) ?? event.start);
+        return _saveUpdate(event, changes, (a) => amended = a);
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (counts) async {
-              amended = await _amendCancel(event, counts);
-              return const [];
+          : (counts) {
+              onCalendar = !_inLayer(event.start);
+              return _saveCancel(event, counts, (a) => amended = a);
             },
       waiting: _waitingOn(event),
       otherEvents: _otherEvents(event),
@@ -3062,6 +3137,8 @@ class _EventsScreenState extends State<EventsScreen> {
     );
     if (!mounted) return;
     switch (outcome) {
+      case SummarySaved(:final value) when onCalendar:
+        await _saved(event, value);
       case SummarySaved():
         _amended(amended!, 'Changed in what happened, to confirm.');
       case SummaryDetails():
@@ -3076,29 +3153,34 @@ class _EventsScreenState extends State<EventsScreen> {
   Future<void> _openReviewedDetails(Event event) async {
     Proposal? amended;
     (DateTime, DateTime)? placing;
+    // Whether it was saved on the calendar, out of the layer.
+    var onCalendar = false;
     final updated = await showEventDialog(
       context,
       event,
       save: (event, changes) async {
         final (rest, span) = _timesApart(event, changes);
         placing = span;
-        if (rest.isNotEmpty) amended = await _amendUpdate(event, rest);
-        return const [];
+        if (rest.isEmpty) return const [];
+        onCalendar = !_inLayer(event.start);
+        return _saveUpdate(event, rest, (a) => amended = a);
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (event, counts) async {
-              amended = await _amendCancel(event, counts);
-              return const [];
+          : (event, counts) {
+              onCalendar = !_inLayer(event.start);
+              return _saveCancel(event, counts, (a) => amended = a);
             },
       waiting: _waitingOn(event),
       actions: _actions,
     );
     if (updated == null || !mounted) return;
     if (placing case final span?) {
-      _placeFromDetails(event, span, saved: amended != null);
+      _placeFromDetails(event, span, saved: amended != null || onCalendar);
     }
-    if (amended case final amended?) {
+    if (onCalendar) {
+      await _saved(event, updated);
+    } else if (amended case final amended?) {
       _amended(amended, 'Changed in what happened, to confirm.');
     }
   }
@@ -3114,13 +3196,7 @@ class _EventsScreenState extends State<EventsScreen> {
       proposed,
       // Saved as the switch is turned, the dialog staying open.
       setCounts: (counts) async {
-        final amended = await _amend(
-          ProposalEdits(
-            cancels: [
-              (eventId: proposed.id, countsAgainstFollowThrough: counts),
-            ],
-          ),
-        );
+        final amended = await _amend(_countsEdit(proposed, counts));
         return amended.event(proposed.id);
       },
     );
@@ -4210,8 +4286,13 @@ class _EventsScreenState extends State<EventsScreen> {
     _commutes.clear();
   });
 
-  /// Saves the move of [_moving] to the box, and what it does to the
-  /// events in its way, in one batch.
+  /// Saves the move of [_moving] to the box. Starting before the open
+  /// proposal's `through`, it's an edit of the proposal's layer: only the
+  /// edges moved, and what it pushes, with whether each event it runs
+  /// right over counts against follow-through -- the layer cuts and
+  /// covers what's under it, so nothing else is sent. Otherwise it's the
+  /// calendar's, with what it does to the events in its way, in one
+  /// batch -- and what the layer decided of it is put back as planned.
   Future<void> _finishMoving() async {
     final event = _moving;
     final span = _box?.span;
@@ -4220,11 +4301,13 @@ class _EventsScreenState extends State<EventsScreen> {
     if (start == event.start && end == event.end && _commutes.isEmpty) {
       return _endBox();
     }
+    final layer = _inLayer(start);
     // Room made for the commutes too, as they ride with the box.
     final (top, foot) = _withCommutes(span);
-    final makingRoom = _overwritesAny
-        ? _overwrite(_movingOthers(event), top, foot)
-        : const Overwrite();
+    final effect = _overwritesAny
+        ? BoxEffect(_movingOthers(event), start: top, end: foot, lists: _listIds)
+        : null;
+    final makingRoom = effect?.overwrite ?? const Overwrite();
     final commutes = _commuteCreates(span);
     final editing = _commutes.values.any((c) => c.event != null);
     final adding = switch ((commutes.length, editing)) {
@@ -4234,6 +4317,11 @@ class _EventsScreenState extends State<EventsScreen> {
       (_, false) => ', adding commutes',
       _ => ', adding and changing commutes',
     };
+    // Only the edges moved.
+    final times = {
+      if (start != event.start) 'start': localIsoTimestamp(start),
+      if (end != event.end) 'end': localIsoTimestamp(end),
+    };
     // Shortening an event below what its goals take is refused here,
     // before anything's asked: the box stays up, as it was.
     if (!await _goalsFit([
@@ -4241,46 +4329,60 @@ class _EventsScreenState extends State<EventsScreen> {
         event,
         {'start': localIsoTimestamp(start), 'end': localIsoTimestamp(end)},
       ),
-      ..._withCommuteEdits(makingRoom).updates,
+      ..._withCommuteEdits(layer ? _pushedOnly(effect) : makingRoom).updates,
     ])) {
       return;
     }
     if (!mounted) return;
+    // Those it runs right over: cancelled on the calendar, covered by the
+    // layer -- asked about the same way.
     final asked = await askFollowThrough(context, makingRoom.cancels);
     // Called off: the box stays up, as it was.
     if (asked == null || !mounted) return;
     final inTheWay = makingRoom.counting(asked);
-    // The commutes edited, as they're edited: not asked about, as
-    // they're the move's own.
-    final writing = _withCommuteEdits(inTheWay);
     final messenger = ScaffoldMessenger.of(context);
-    final times = {
-      'start': localIsoTimestamp(start),
-      'end': localIsoTimestamp(end),
-    };
     var changed = const <Event>[];
     Proposal? amended;
     try {
-      // In what happened, to confirm: the proposal's changed.
-      if (_overThroughProposal(
-        writing,
-        events: [event],
-        spans: [span, for (final c in commutes) ?_spanOf(c)],
-      )) {
+      if (layer) {
+        // The commutes edited, as they're edited: not asked about, as
+        // they're the move's own.
+        final writing = _withCommuteEdits(_pushedOnly(effect));
         amended = await _amend(
-          ProposalEdits.over(
-            writing,
-            updates: [proposalUpdate(event, times)],
-            creates: [for (final c in commutes) proposalCreate(c)],
+          ProposalEdits(
+            updates: [
+              if (times.isNotEmpty) proposalUpdate(event, times),
+              for (final (e, changes) in writing.updates)
+                proposalUpdate(e, changes),
+            ],
+            creates: [
+              for (final c in commutes) proposalCreate(c),
+              for (final rest in writing.creates)
+                proposalCreate(rest, strict: false),
+            ],
+            cancels: [
+              for (final e in writing.cancels)
+                (eventId: e.id!, countsAgainstFollowThrough: false),
+            ],
+            followThrough: _answers(makingRoom.cancels, asked),
           ),
           label: 'Move ${_named(event)}$adding, in what happened',
         );
       } else {
+        final writing = _withCommuteEdits(inTheWay);
+        // Both its times, as a move on the calendar always sends -- but
+        // for one the layer cuts, only what moved: the calendar keeps
+        // the edge the layer cut.
+        final cut = _editedProposal?.event(event.id)?.cut ?? false;
+        final moved = _outOfLayer(event, {
+          if (!cut || start != event.start) 'start': localIsoTimestamp(start),
+          if (!cut || end != event.end) 'end': localIsoTimestamp(end),
+        });
         changed = await _approvingHistory(
           at: start.isBefore(event.start) ? start : event.start,
           (allow) => _writes.makeRoom(
             Overwrite(
-              updates: [(event, times), ...writing.updates],
+              updates: [(event, moved), ...writing.updates],
               cancels: writing.cancels,
               creates: [...writing.creates, ...commutes],
               countsAgainst: writing.countsAgainst,
@@ -4292,31 +4394,38 @@ class _EventsScreenState extends State<EventsScreen> {
                       '${_events(inTheWay.count)}',
           ),
         );
+        await _leaveLayer(event);
       }
     } catch (e) {
-      // The box is still up, as it was: try again from it.
+      // The box is still up, as it was: try again from it -- not where
+      // the server says it's under the proposal's layer, which its
+      // message says how to change first.
       if (mounted) {
+        final under = isUnderLayerRefusal(e);
         await showErrorSheet(
           context,
-          title: "Couldn't move it",
+          title: under
+              ? "It's under what happened, to confirm"
+              : "Couldn't move it",
           error: e,
-          onRetry: _finishMoving,
+          onRetry: under ? null : _finishMoving,
         );
       }
       return;
     }
     if (!mounted) return;
     _endBox();
-    final others = inTheWay.count;
     if (amended != null) {
+      final covered = makingRoom.cancels.length;
       return _amended(
         amended,
-        others == 0
+        covered == 0
             ? 'Moved in what happened, to confirm.'
-            : 'Moved in what happened, to confirm. ${_events(others)} '
-                  'changed to make room.',
+            : 'Moved in what happened, to confirm. It covers '
+                  '${_events(covered)}.',
       );
     }
+    final others = inTheWay.count;
     messenger.showSnackBar(
       SnackBar(
         content: Text(
@@ -4354,14 +4463,6 @@ class _EventsScreenState extends State<EventsScreen> {
       lists: _listIds,
     ),
     null => null,
-  };
-
-  /// Whether the box goes later from its cursor: the way it pushes.
-  bool get _later => switch (_box) {
-    PendingEventBox(:final cursor, other: final other?) => other.isAfter(
-      cursor,
-    ),
-    _ => true,
   };
 
   /// Changes the box to what [change] makes of it, kept in free time
@@ -4471,9 +4572,8 @@ class _EventsScreenState extends State<EventsScreen> {
   Overwrite _overwrite(
     OtherEvents others,
     DateTime start,
-    DateTime end, {
-    bool? later,
-  }) => BoxEffect(others, start: start, end: end, lists: _listIds).overwrite;
+    DateTime end,
+  ) => BoxEffect(others, start: start, end: end, lists: _listIds).overwrite;
 
   /// How near, on screen, a dragged cursor has to come to an edge or a
   /// note to stop there.
@@ -4663,22 +4763,22 @@ class _EventsScreenState extends State<EventsScreen> {
     final (start, end) = span;
     final others = _otherEvents(_moving);
     final overwrite = _overwritesAny;
-    final later = _later;
     final inTheWay = _overwrite(others, start, end);
     var cleared = false;
-    // In what happened, to confirm: made in the proposal.
-    final review = _reviews(start, end);
+    // In what happened, to confirm: made in the proposal's layer.
+    final review = _inLayer(start);
     Proposal? amended;
-    Overwrite inTheWayOf(Map<String, Object?> fields) => _overwrite(
+    BoxEffect effectOf(Map<String, Object?> fields) => BoxEffect(
       others,
-      DateTime.parse(fields['start'] as String),
-      DateTime.parse(fields['end'] as String),
-      later: later,
+      start: DateTime.parse(fields['start'] as String),
+      end: DateTime.parse(fields['end'] as String),
+      lists: _listIds,
     );
 
-    // Asked of what it cancels; called off, the dialog stays open.
+    // Asked of what it cancels -- or, in the layer, covers; called off,
+    // the dialog stays open.
     Future<Overwrite> askedInTheWayOf(Map<String, Object?> fields) async {
-      final over = inTheWayOf(fields);
+      final over = effectOf(fields).overwrite;
       final asked = await askFollowThrough(context, over.cancels);
       if (asked == null) throw const CalledOff();
       return over.counting(asked);
@@ -4705,9 +4805,25 @@ class _EventsScreenState extends State<EventsScreen> {
         final over = overwrite
             ? await askedInTheWayOf(fields)
             : const Overwrite();
-        if (review || _overThroughProposal(over, spans: [?_spanOf(fields)])) {
+        if (_inLayer(_spanOf(fields)?.$1 ?? start)) {
+          // The layer cuts and covers what's under it: only what it
+          // pushes is sent, and whether what it covers counts.
+          final pushed = overwrite
+              ? _pushedOnly(effectOf(fields))
+              : const Overwrite();
           amended = await _amend(
-            ProposalEdits.over(over, creates: [proposalCreate(fields)]),
+            ProposalEdits(
+              creates: [
+                proposalCreate(fields),
+                for (final rest in pushed.creates)
+                  proposalCreate(rest, strict: false),
+              ],
+              updates: [
+                for (final (e, changes) in pushed.updates)
+                  proposalUpdate(e, changes),
+              ],
+              followThrough: _answers(over.cancels, over.countsAgainst),
+            ),
             label: 'Add ${_nameOf(fields)}, to what happened',
           );
           return const [];
@@ -4755,7 +4871,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 if (asked == null) throw const CalledOff();
                 final over = inTheWay.counting(asked);
                 cleared = true;
-                if (review || _overThroughProposal(over)) {
+                if (review) {
                   amended = await _amend(
                     ProposalEdits.over(over),
                     label: 'Clear time in what happened',
@@ -4994,24 +5110,45 @@ class _EventsScreenState extends State<EventsScreen> {
     final asked = await askFollowThrough(context, cancels, makingRoom: false);
     // Called off: the cursor stays, as it was.
     if (asked == null || !mounted) return;
-    final over = Overwrite(cancels: cancels).counting(asked);
     final label = 'Cancel ${_events(cancels.length)}';
     final said = 'Cancelled ${_events(cancels.length)}';
+    // Those starting before the proposal's `through` are cancelled in its
+    // layer; the rest, on the calendar.
+    final layered = [
+      for (final e in cancels)
+        if (_inLayer(e.start)) e,
+    ];
+    final planned = [
+      for (final e in cancels)
+        if (!_inLayer(e.start)) e,
+    ];
     try {
-      if (_reviews(at, at.add(const Duration(minutes: 1))) ||
-          _overThroughProposal(over)) {
-        final amended = await _amend(
-          ProposalEdits.over(over),
+      Proposal? amended;
+      if (layered.isNotEmpty) {
+        amended = await _amend(
+          ProposalEdits.over(Overwrite(cancels: layered).counting(asked)),
           label: '$label, in what happened',
         );
+      }
+      if (planned.isEmpty) {
         if (!mounted) return;
         _endBox();
-        return _amended(amended, '$said, in what happened.');
+        return _amended(amended!, '$said, in what happened.');
+      }
+      for (final e in planned) {
+        _outOfLayer(e, const {});
       }
       final changed = await _approvingHistory(
-        at: cancels.map((e) => e.start).reduce((a, b) => a.isBefore(b) ? a : b),
-        (allow) => _writes.makeRoom(over, allowHistory: allow, label: label),
+        at: planned.map((e) => e.start).reduce((a, b) => a.isBefore(b) ? a : b),
+        (allow) => _writes.makeRoom(
+          Overwrite(cancels: planned).counting(asked),
+          allowHistory: allow,
+          label: label,
+        ),
       );
+      for (final e in planned) {
+        await _leaveLayer(e);
+      }
       if (!mounted) return;
       _endBox();
       ScaffoldMessenger.of(context)
@@ -5131,7 +5268,7 @@ class _EventsScreenState extends State<EventsScreen> {
   /// pressing and holding it does -- the events in its way kept, pushed
   /// or cancelled from the lists (see [_placeFromDetails]).
   Future<void> _openEventDetails(Event event) async {
-    // Edited in what happened, if it runs into what the proposal changed.
+    // Edited in the proposal's layer, if it starts before its `through`.
     Proposal? amended;
     // Its new times, for the box once the dialog's closed; and whether
     // anything else was saved -- or it was cancelled.
@@ -5145,31 +5282,13 @@ class _EventsScreenState extends State<EventsScreen> {
         placing = span;
         if (rest.isEmpty) return const [];
         saved = true;
-        if (_throughProposal([event], [_spanWith(event, rest)])) {
-          amended = await _amendUpdate(event, rest);
-          return const [];
-        }
-        return _approvingHistory(
-          at: event.start,
-          (allow) => _writes.update(event, rest, allowHistory: allow),
-        );
+        return _saveUpdate(event, rest, (a) => amended = a);
       },
       cancel: _waitingOn(event).isNotEmpty
           ? null
-          : (event, counts) async {
+          : (event, counts) {
               saved = true;
-              if (_throughProposal([event], [(event.start, event.end)])) {
-                amended = await _amendCancel(event, counts);
-                return const [];
-              }
-              return _approvingHistory(
-                at: event.start,
-                (allow) => _writes.cancel(
-                  event,
-                  countsAgainstFollowThrough: counts,
-                  allowHistory: allow,
-                ),
-              );
+              return _saveCancel(event, counts, (a) => amended = a);
             },
       waiting: _waitingOn(event),
       actions: _actions,
@@ -5815,19 +5934,54 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  /// Gives up the open proposal, after asking.
+  /// Gives up the open proposal, after asking -- listing the calendar
+  /// edits made by hand around its layer, which stay, and any overlap one
+  /// will be left in once the layer's gone.
   Future<void> _abandonProposal() async {
     final proposal = _proposal;
     if (proposal == null) return;
+    final edits = proposal.calendarEdits;
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Abandon it?'),
-        content: Text(
-          'What happened '
-          '${windowLabel(context, proposal.windowStart, proposal.through)} '
-          "isn't confirmed from it, and your edits and notes to it are "
-          'dropped. Claude proposes it again on its next run.',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'What happened '
+                '${windowLabel(context, proposal.windowStart, proposal.through)} '
+                "isn't confirmed from it, and your edits and notes to it are "
+                'dropped. Claude proposes it again on its next run.',
+              ),
+              if (edits.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Your calendar edits around it stay as you left them:',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                for (final edit in edits) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    '${_editedName(edit.event)}, '
+                    '${windowLabel(context, edit.event.start, edit.event.end)}'
+                    ', stays.',
+                  ),
+                  if (edit.overlaps case final other?)
+                    Text(
+                      '${_editedName(other)} (to ${_timeOf(other.end)}) will '
+                      'overlap ${_editedName(edit.event)} '
+                      '(${_timeOf(edit.event.start)}).',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                ],
+              ],
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -5853,6 +6007,12 @@ class _EventsScreenState extends State<EventsScreen> {
       _closeProposal(proposal.id, applied: false);
     });
   }
+
+  /// [event]'s summary, as a calendar edit names it.
+  static String _editedName(EditedEvent event) => switch (event.summary) {
+    final s? when s.trim().isNotEmpty => s,
+    _ => 'An event',
+  };
 
   /// Shows the start of what the open proposal says happened.
   void _goToProposal() {
@@ -6835,16 +6995,26 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Says whether [cancel] counts against follow-through -- [counts] --
   /// or is a change of plan: sent again, the other way.
+  /// The edit saying whether [cancel] counts against follow-through: for
+  /// one the layer covers, only that -- its answer -- as covering it isn't
+  /// a decision to cancel it.
+  static ProposalEdits _countsEdit(ProposalEvent cancel, bool counts) =>
+      cancel.covered
+      ? ProposalEdits(
+          followThrough: [
+            (eventId: cancel.id, countsAgainstFollowThrough: counts),
+          ],
+        )
+      : ProposalEdits(
+          cancels: [(eventId: cancel.id, countsAgainstFollowThrough: counts)],
+        );
+
   Future<void> _setCounts(ProposalEvent cancel, bool counts) async {
     await runOrShowError(
       context,
       title: "Couldn't change it",
       action: () async {
-        final amended = await _amend(
-          ProposalEdits(
-            cancels: [(eventId: cancel.id, countsAgainstFollowThrough: counts)],
-          ),
-        );
+        final amended = await _amend(_countsEdit(cancel, counts));
         if (mounted) {
           _amended(
             amended,
@@ -7520,6 +7690,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         through: _extendTo ?? proposal.through,
                         claudeThrough:
                             proposal.claudeThrough ?? proposal.through,
+                        layerEnd: proposal.layerEnd,
                       ),
                 onTapThrough: _canExtend ? _startExtending : null,
                 marks: _marks,

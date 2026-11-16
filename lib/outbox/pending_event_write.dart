@@ -223,6 +223,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
           updateFields(u).$1: updateFields(u).$2.keys.toSet(),
         for (final c in edits.cancels) c.eventId: null,
         for (final id in edits.asPlanned) id: null,
+        for (final f in edits.followThrough) f.eventId: null,
         for (var i = 0; i < edits.creates.length; i++) pendingId(i): null,
       },
       // What they hold is the proposal: see EventOutbox.closing.
@@ -322,7 +323,17 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
         when through.isAfter(proposal.through)) {
       proposal = proposal.copyWith(through: through);
     }
-    final events = [...?proposal.events];
+    // Each where the plan had it, to edit; the layer's laid over them again
+    // once they're edited, as the server will (see implyLayer).
+    final layered =
+        edits.updates.isNotEmpty ||
+        edits.creates.isNotEmpty ||
+        edits.cancels.isNotEmpty ||
+        edits.asPlanned.isNotEmpty ||
+        edits.followThrough.isNotEmpty;
+    final events = layered
+        ? unimplied(proposal.events ?? const [], proposal.through)
+        : [...?proposal.events];
     // What the server takes in, as the calendar has it, till it says.
     for (final e in edits.takenIn) {
       if (events.any((p) => p.id == e.id)) continue;
@@ -348,7 +359,9 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       final current = events.where((e) => e.id == id).firstOrNull;
       replace(id, {
         ...fields,
-        if (current != null && current.status == ProposalEventStatus.onSchedule)
+        if (current != null &&
+            (current.status == ProposalEventStatus.onSchedule ||
+                current.status == ProposalEventStatus.planned))
           'status': ProposalEventStatus.adjusted.json,
       });
     }
@@ -380,6 +393,16 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       }
     }
     events.sort((a, b) => a.start.compareTo(b.start));
+    final shown = layered
+        ? implyLayer(
+            events,
+            proposal.through,
+            answers: {
+              for (final f in edits.followThrough)
+                f.eventId: f.countsAgainstFollowThrough,
+            },
+          )
+        : events;
     final (goalChanges, settledGoalChanges) = _settlingGoals(proposal);
     final (stories, settledStories) = settleStories(
       proposal.traitExamples,
@@ -387,7 +410,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       edits.traitExamples,
     );
     return proposal.copyWith(
-      events: events,
+      events: shown,
       goalChanges: goalChanges,
       settledGoalChanges: settledGoalChanges,
       traitExamples: stories,
