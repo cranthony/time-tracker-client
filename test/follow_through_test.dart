@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/widgets/follow_through_dialog.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 
 Event _event(String id, String summary, int hour) => Event(
@@ -50,8 +52,12 @@ void main() {
       Future<void> Function() answer,
     ) async {
       Set<String>? result = {'unanswered'};
+      final hotkeys = Hotkeys();
       await tester.pumpWidget(
         MaterialApp(
+          navigatorObservers: [hotkeys],
+          builder: (context, child) =>
+              HotkeyScope(hotkeys: hotkeys, child: child!),
           home: Builder(
             builder: (context) => TextButton(
               onPressed: () async =>
@@ -80,6 +86,54 @@ void main() {
         await tester.tap(find.text('Cancel them'));
       });
 
+      expect(counted, {'b'});
+    });
+
+    Future<void> press(WidgetTester tester, LogicalKeyboardKey key) async {
+      await tester.sendKeyEvent(key);
+      await tester.pumpAndSettle();
+    }
+
+    /// The title of the switch with focus.
+    String? focused() {
+      final context = FocusManager.instance.primaryFocus?.context;
+      final tile = context?.findAncestorWidgetOfExactType<SwitchListTile>();
+      return (tile?.title as Text?)?.data;
+    }
+
+    testWidgets('J and K go from switch to switch; Enter turns one on', (
+      tester,
+    ) async {
+      final counted = await ask(tester, () async {
+        await press(tester, LogicalKeyboardKey.keyJ);
+        expect(focused(), 'Call Mom');
+        await press(tester, LogicalKeyboardKey.keyJ);
+        expect(focused(), 'Texts');
+        await press(tester, LogicalKeyboardKey.keyJ);
+        expect(focused(), 'Texts');
+        await press(tester, LogicalKeyboardKey.keyK);
+        expect(focused(), 'Call Mom');
+        await press(tester, LogicalKeyboardKey.enter);
+        expect(find.text('Cancel 2 events to make room?'), findsOneWidget);
+        await tester.tap(find.text('Cancel them'));
+      });
+
+      expect(counted, {'a'});
+    });
+
+    testWidgets('Ctrl+Enter cancels them, as the cancel button does', (
+      tester,
+    ) async {
+      final counted = await ask(tester, () async {
+        await press(tester, LogicalKeyboardKey.keyK);
+        expect(focused(), 'Texts');
+        await press(tester, LogicalKeyboardKey.space);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      });
+
+      expect(find.byType(AlertDialog), findsNothing);
       expect(counted, {'b'});
     });
 
