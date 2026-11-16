@@ -689,8 +689,16 @@ class DayTimeline extends StatelessWidget {
   final ValueListenable<double>? axisShift;
 
   /// What a compaction proposal says happened, to confirm: from its
-  /// window's start to its `through`.
-  final ({DateTime from, DateTime through, DateTime? claudeThrough})? review;
+  /// window's start to its `through` -- its layer over the calendar
+  /// running on to [layerEnd] where that's later, the tail of the event
+  /// going on at `through`, with a line across at `through`.
+  final ({
+    DateTime from,
+    DateTime through,
+    DateTime? claudeThrough,
+    DateTime? layerEnd,
+  })?
+  review;
 
   /// The [review] band's `through` tapped: to extend it. Null, it can't
   /// be.
@@ -900,6 +908,7 @@ class DayTimeline extends StatelessWidget {
         from: review.from,
         through: review.through,
         claudeThrough: review.claudeThrough,
+        layerEnd: review.layerEnd,
         onTapThrough: onTapThrough,
         y: y,
       ),
@@ -1286,10 +1295,11 @@ List<Widget> _googleMarks(
     ),
 ];
 
-/// The part of a proposal's review band, [from] to [through], on [day]:
+/// The part of a proposal's review band -- its layer over the calendar --
+/// [from] to [through], or on to [layerEnd] where that's later, on [day]:
 /// [under] the events, its tint and outline; [over] them, its heading
-/// where it starts and its `through` where it ends. Null if it's not on
-/// the day.
+/// where it starts and its `through` where that is, a line across there
+/// when the layer runs on past it. Null if it's not on the day.
 ({List<Widget> under, List<Widget> over})? _reviewBand(
   BuildContext context, {
   required DateTime day,
@@ -1297,16 +1307,32 @@ List<Widget> _googleMarks(
   required DateTime from,
   required DateTime through,
   DateTime? claudeThrough,
+  DateTime? layerEnd,
   VoidCallback? onTapThrough,
   required double Function(DateTime) y,
 }) {
-  if (!from.isBefore(dayEnd) || !through.isAfter(day)) return null;
+  final end = switch (layerEnd) {
+    final l? when l.isAfter(through) => l,
+    _ => through,
+  };
+  if (!from.isBefore(dayEnd) || !end.isAfter(day)) return null;
   final scheme = Theme.of(context).colorScheme;
   final colors = reviewColors(scheme);
   final starts = !from.isBefore(day);
-  final ends = through.isBefore(dayEnd);
+  final ends = end.isBefore(dayEnd);
   final top = y(starts ? from : day);
-  final bottom = y(ends ? through : dayEnd);
+  final bottom = y(ends ? end : dayEnd);
+  // Where `through` is on the day, if it is: the band's foot, or -- the
+  // layer running on past it -- a line across it.
+  final throughShows = through.isAfter(day) && through.isBefore(dayEnd);
+  final throughY = y(
+    through.isBefore(day)
+        ? day
+        : through.isAfter(dayEnd)
+        ? dayEnd
+        : through,
+  );
+  final runsOn = end.isAfter(through);
   final time = MaterialLocalizations.of(context)
       .formatTimeOfDay(TimeOfDay.fromDateTime(through.toLocal()));
   // A tab on the band's edge: above it at the top, below it at the foot.
@@ -1346,6 +1372,7 @@ List<Widget> _googleMarks(
     ),
     _ => null,
   };
+  final extensionFoot = throughY;
   return (
     under: [
       Positioned(
@@ -1372,7 +1399,7 @@ List<Widget> _googleMarks(
           left: _timeWidth - 4,
           right: 2,
           top: top,
-          height: math.max(0, bottom - top),
+          height: math.max(0, extensionFoot - top),
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -1382,6 +1409,21 @@ List<Widget> _googleMarks(
                   right: BorderSide(color: scheme.secondary, width: 2),
                 ),
               ),
+            ),
+          ),
+        ),
+      // `through`, with the layer running on past it: a line across.
+      if (runsOn && throughShows)
+        Positioned(
+          left: _timeWidth - 4,
+          right: 2,
+          top: throughY - 1,
+          height: 2,
+          child: IgnorePointer(
+            child: Semantics(
+              label: 'The layer runs on past through, to the end of the '
+                  'event going on then',
+              child: ColoredBox(color: colors.line),
             ),
           ),
         ),
@@ -1435,10 +1477,10 @@ List<Widget> _googleMarks(
             below: false,
           ),
         ),
-      if (ends)
+      if (runsOn ? throughShows : ends)
         Positioned(
           right: 2,
-          top: bottom,
+          top: throughY,
           child: switch (onTapThrough) {
             // Tapped, to extend it: a pencil says so.
             final onTap? => Tooltip(

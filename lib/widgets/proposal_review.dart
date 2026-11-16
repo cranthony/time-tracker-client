@@ -51,14 +51,12 @@ EventMark proposalMark(
     // A historical note revisits it: its times stay as they are.
     if (event.revisited) 'Revisited',
     ...switch (event.status) {
+      // What the layer did to it, by what did it: nothing decided it.
+      _ when event.cut => ['Cut by ${event.impliedByName}'],
       ProposalEventStatus.created => ['New'],
       ProposalEventStatus.cancelled => [
-        if (!(event.countsAgainstFollowThrough ?? true))
-          'Cancelled, a change of plan'
-        else if (event.followThrough.isEmpty)
-          'Cancelled, counts against follow-through'
-        else
-          'Cancelled, counts against ${event.followThrough.join(', ')}',
+        '${event.covered ? 'Covered by ${event.impliedByName}' : 'Cancelled'}, '
+            '${followThroughSays(event)}',
       ],
       ProposalEventStatus.merged => ['Merged'],
       ProposalEventStatus.adjusted => [
@@ -85,6 +83,7 @@ EventMark proposalMark(
   return EventMark(
     label: [what.join(' · '), ?by].join(' · '),
     icon: switch (event.status) {
+      _ when event.cut => Icons.content_cut,
       ProposalEventStatus.cancelled ||
       ProposalEventStatus.merged => Icons.close,
       ProposalEventStatus.created => Icons.add,
@@ -95,6 +94,15 @@ EventMark proposalMark(
     selected: selected,
   );
 }
+
+/// Whether [event], cancelled or covered, counts against follow-through,
+/// and against whom: "a change of plan", "counts against Sam (Reliable)".
+String followThroughSays(ProposalEvent event) =>
+    !(event.countsAgainstFollowThrough ?? true)
+    ? 'a change of plan'
+    : event.followThrough.isEmpty
+    ? 'counts against follow-through'
+    : 'counts against ${event.followThrough.join(', ')}';
 
 bool _same(List<String> a, List<String> b) =>
     a.length == b.length &&
@@ -1348,6 +1356,7 @@ class ProposalCancelStrip extends StatelessWidget {
         ],
       ),
       says: [
+        if (event.covered) 'Covered by ${event.impliedByName}',
         if (!counts)
           'A change of plan: no one’s follow-through'
         else if (event.followThrough.isEmpty)
@@ -2998,12 +3007,14 @@ final class AskAboutCancel extends CancelledChoice {
   const AskAboutCancel();
 }
 
-/// Shows [event], which the proposal says didn't happen -- cancelled, or
-/// merged into another -- when it was, who said so, and, cancelled,
+/// Shows [event], which the proposal says didn't happen -- cancelled,
+/// covered by the layer, or merged into another -- when it was, who said
+/// so (or what covered it), and, cancelled or covered,
 /// whether that counts against follow-through, and against whom, in full.
 /// Its switch says otherwise with [setCounts], staying open to show what
 /// that came to -- the event as it is now -- or why it couldn't. It can be
-/// put back as planned, or asked about in a note for Claude.
+/// put back as planned -- not one covered, which the layer over it
+/// decides -- or asked about in a note for Claude.
 Future<CancelledChoice?> showCancelledDialog(
   BuildContext context,
   ProposalEvent event, {
@@ -3078,7 +3089,11 @@ class _CancelledDialogState extends State<_CancelledDialog> {
             children: [
               Text(
                 '${_time(context, event.start)} – ${_time(context, event.end)}'
-                ' · ${merged ? 'Merged into another event' : 'Cancelled'}'
+                ' · ${merged
+                    ? 'Merged into another event'
+                    : event.covered
+                    ? 'Covered by ${event.impliedByName}'
+                    : 'Cancelled'}'
                 '${switch (event.decidedBy) {
                   DecidedBy.claude => ' by Claude',
                   DecidedBy.user => ' by you',
@@ -3145,12 +3160,14 @@ class _CancelledDialogState extends State<_CancelledDialog> {
                 : () => Navigator.of(context).pop(const AskAboutCancel()),
             child: const Text('Note for Claude'),
           ),
-          TextButton(
-            onPressed: _saving
-                ? null
-                : () => Navigator.of(context).pop(const PutBack()),
-            child: const Text('Put it back'),
-          ),
+          // Covered, it's the layer over it that's to change.
+          if (!event.covered)
+            TextButton(
+              onPressed: _saving
+                  ? null
+                  : () => Navigator.of(context).pop(const PutBack()),
+              child: const Text('Put it back'),
+            ),
           FilledButton(onPressed: done, child: const Text('Done')),
         ],
       ),

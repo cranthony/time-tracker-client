@@ -674,6 +674,66 @@ void main() {
       expect(proposals.amends.last.asPlanned, ['call']);
     });
 
+    testWidgets('one the layer covers is listed with the cancels, covered '
+        'by what covers it; its switch sends only its answer, and it '
+        "can't be put back", (tester) async {
+      final base = proposalJson();
+      await open(
+        tester,
+        extra: {
+          'events': [
+            (base['events'] as List).first,
+            {
+              'id': 'stretch',
+              'summary': 'Stretch',
+              'start': iso(9, 15),
+              'end': iso(9, 45),
+              'planned_start': iso(9, 15),
+              'planned_end': iso(9, 45),
+              'status': 'cancelled',
+              'covered_by': 'tea',
+              'covered_by_summary': 'Tea',
+              'counts_against_follow_through': true,
+            },
+            ...(base['events'] as List).skip(1),
+          ],
+        },
+      );
+      expect(
+        tester
+            .widget<DayTimeline>(find.byType(DayTimeline))
+            .marks['stretch']!
+            .label,
+        'Covered by Tea, counts against follow-through',
+      );
+      await page(tester, 'Follow-through (2 of 3)');
+      expect(
+        find.text(
+          'Covered by Tea · Counts against follow-through: no one’s tracked',
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+      expect(proposals.amends.single.toJson(), {
+        'follow_through': [
+          {'event_id': 'stretch', 'counts_against_follow_through': false},
+        ],
+      });
+      // Still covered, as a change of plan now.
+      final stretch = proposals.proposal!.event('stretch')!;
+      expect(stretch.covered, isTrue);
+      expect(stretch.countsAgainstFollowThrough, isFalse);
+
+      // In full: what covers it, and no putting it back.
+      await tester.tap(find.textContaining('Stretch').first);
+      await tester.pumpAndSettle();
+      expect(find.text('9:15 AM – 9:45 AM · Covered by Tea'), findsOneWidget);
+      expect(find.text('Put it back'), findsNothing);
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets("a change the server refuses is said in the error sheet, "
         "and the switch stays as it was", (tester) async {
       await open(tester);

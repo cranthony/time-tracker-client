@@ -322,6 +322,14 @@ List<Event> _changed(Object? result) => [
 bool isHistoryRefusal(Object error) =>
     error is McpException && error.message.contains('allow_compacted_changes');
 
+/// Whether [error] is the server refusing a calendar write that lands
+/// under the open compaction proposal's layer -- under one of its events.
+/// The server says only so in words: its message says what to end
+/// earlier in the proposal first.
+bool isUnderLayerRefusal(Object error) =>
+    error is McpException &&
+    error.message.contains('lands under the open compaction proposal');
+
 /// Keeps events in memory. Used when no server is configured, and in tests.
 class InMemoryEventsRepository implements EventsRepository {
   InMemoryEventsRepository([

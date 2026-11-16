@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/outbox/event_outbox.dart';
 import 'package:time_tracker_client/outbox/outbox_store.dart';
@@ -24,6 +25,7 @@ import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
 import 'package:time_tracker_client/services/response_cache.dart';
 import 'package:time_tracker_client/widgets/day_timeline.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
 import 'package:time_tracker_client/widgets/proposal_problem_status.dart';
 import 'package:time_tracker_client/widgets/proposal_review.dart';
@@ -279,6 +281,133 @@ void main() {
       expect(walk.isCancelled, isTrue);
       expect(walk.effectivePriority, 1);
       expect(walk.properties.containsKey('status'), isFalse);
+    });
+  });
+
+  group('the layer', () {
+    test("reads where its layer ends, what it cut and covered, and the "
+        "calendar edits made around it; a server before the layer's, "
+        'without them', () {
+      final old = Proposal.fromJson(proposalJson());
+      expect(old.layerEnd.isAtSameMomentAs(at(12)), isTrue);
+      expect(old.calendarEdits, isEmpty);
+      expect(old.event('talk')!.implied, isFalse);
+
+      final proposal = Proposal.fromJson({
+        ...proposalJson(),
+        'layer_end': iso(14, 30),
+        'events': [
+          {
+            'id': 'talk',
+            'summary': 'Talk',
+            'start': iso(14, 30),
+            'end': iso(15),
+            'status': 'adjusted',
+            'planned_start': iso(14),
+            'planned_end': iso(15),
+            'cut_by': 'abc123def456u1',
+            'cut_by_summary': 'Dance class',
+          },
+        ],
+        'calendar_edits': [
+          {
+            'event_id': 'call',
+            'summary': 'Call',
+            'start': iso(11),
+            'end': iso(11, 30),
+            'kind': 'freed',
+            'overlaps': {
+              'event_id': 'work',
+              'summary': 'Work',
+              'start': iso(10),
+              'end': iso(12),
+            },
+          },
+        ],
+      });
+      expect(proposal.layerEnd.isAtSameMomentAs(at(14, 30)), isTrue);
+      final talk = proposal.event('talk')!;
+      expect(talk.cut, isTrue);
+      expect(talk.impliedByName, 'Dance class');
+      // Not the event's own.
+      expect(talk.toEvent().properties.containsKey('cut_by'), isFalse);
+      final edit = proposal.calendarEdits.single;
+      expect(edit.kind, CalendarEditKind.freed);
+      expect(edit.event.summary, 'Call');
+      expect(edit.overlaps!.end.isAtSameMomentAs(at(12)), isTrue);
+    });
+
+    ProposalEvent event(
+      String id,
+      int from,
+      int to, {
+      String status = 'on_schedule',
+      String? by,
+    }) => ProposalEvent.fromJson({
+      'id': id,
+      'summary': id,
+      'start': iso(from),
+      'end': iso(to),
+      'status': status,
+      'decided_by': ?by,
+    })!;
+
+    test('what the layer runs over is cut, covered or split -- worked out '
+        'afresh each time -- and a covered one counts unless answered', () {
+      final layer = implyLayer(
+        [
+          event('sleep', 0, 9),
+          event('dance', 8, 11, status: 'new', by: 'user'),
+          event('journal', 9, 10),
+          event('work', 10, 13),
+          event('gym', 7, 15, status: 'planned'),
+        ],
+        at(12),
+        answers: {'journal': false},
+      );
+      ProposalEvent of(String id) => layer.firstWhere((e) => e.id == id);
+      expect(of('sleep').cutBy, 'dance');
+      expect(of('sleep').end.isAtSameMomentAs(at(8)), isTrue);
+      expect(of('sleep').plannedEnd!.isAtSameMomentAs(at(9)), isTrue);
+      expect(of('journal').covered, isTrue);
+      expect(of('journal').countsAgainstFollowThrough, isFalse);
+      expect(of('work').start.isAtSameMomentAs(at(11)), isTrue);
+      // Split around it: the later piece new.
+      expect(of('gym').end.isAtSameMomentAs(at(8)), isTrue);
+      expect(of('gym~1').status, ProposalEventStatus.created);
+      expect(of('gym~1').start.isAtSameMomentAs(at(11)), isTrue);
+      expect(layerEndOf(layer, at(10)).isAtSameMomentAs(at(11)), isTrue);
+
+      // The dance class gone: each as planned again.
+      final again = implyLayer([
+        for (final e in layer)
+          if (e.id != 'dance') e,
+      ], at(12));
+      expect(again.any((e) => e.implied || e.splitPiece), isFalse);
+      expect(
+        again.firstWhere((e) => e.id == 'sleep').end.isAtSameMomentAs(at(9)),
+        isTrue,
+      );
+    });
+
+    test('follow-through answers go in amend_proposal on their own, and '
+        'are kept as they wait', () {
+      const edits = ProposalEdits(
+        followThrough: [(eventId: 'gym', countsAgainstFollowThrough: false)],
+      );
+      expect(edits.toJson(), {
+        'follow_through': [
+          {'event_id': 'gym', 'counts_against_follow_through': false},
+        ],
+      });
+      expect(ProposalEdits.fromJson(edits.toJson()).followThrough, [
+        (eventId: 'gym', countsAgainstFollowThrough: false),
+      ]);
+      expect(edits.eventIds, {'gym'});
+      expect(
+        const ProposalEdits().toJson().containsKey('follow_through'),
+        isFalse,
+      );
     });
   });
 
@@ -1039,6 +1168,8 @@ void main() {
       ProposalProblemStatus? problem,
       List<Goal>? goals,
       List<Event> also = const [],
+      Stream<Event>? showEvents,
+      Hotkeys? hotkeys,
     }) async {
       // A phone's height: the bar and its details, and the morning, in
       // view.
@@ -1072,6 +1203,11 @@ void main() {
       await tester.pumpWidget(
         withGoals(
           MaterialApp(
+            navigatorObservers: [?hotkeys],
+            builder: hotkeys == null
+                ? null
+                : (context, child) =>
+                      HotkeyScope(hotkeys: hotkeys, child: child!),
             // An hour's grid and no other stops: each step an hour.
             home: AppSettingsScope(
               settings:
@@ -1086,6 +1222,7 @@ void main() {
                 notesRepository: notes,
                 eventOutbox: outbox,
                 proposalProblem: problem,
+                showEventRequests: showEvents,
                 clock: () => now,
               ),
             ),
@@ -1948,27 +2085,14 @@ void main() {
         }
       }
 
-      testWidgets('that runs into an event the proposal changed edits the '
-          'proposal: the calendar would refuse it', (tester) async {
+      testWidgets("starting after the proposal's through, it's the "
+          "calendar's, whatever it runs into", (tester) async {
         await open(tester, json: json(talkMoved: true), also: [reading]);
-        await later(tester, 2);
+        await later(tester, 1);
         await tap(tester, find.text('Save'));
 
-        expect(proposals.amends.single.toJson(), {
-          'updates': [
-            {
-              'event': {'id': 'read', 'end': iso(14, 15)},
-            },
-          ],
-        });
-        expect(
-          (await onCalendar('read')).end.isAtSameMomentAs(at(13, 45)),
-          isTrue,
-        );
-        expect(
-          find.text('Changed in what happened, to confirm.'),
-          findsOneWidget,
-        );
+        expect(proposals.amends, isEmpty);
+        expect((await onCalendar('read')).end.isAtSameMomentAs(at(14)), isTrue);
       });
 
       testWidgets('with nothing changed in its way saves to the calendar', (
@@ -1982,8 +2106,8 @@ void main() {
         expect((await onCalendar('read')).end.isAtSameMomentAs(at(14)), isTrue);
       });
 
-      testWidgets('cancelling one over an event the proposal changed cancels '
-          'it in the proposal', (tester) async {
+      testWidgets("cancelling one after the proposal's through cancels it on "
+          'the calendar', (tester) async {
         await open(
           tester,
           json: json(talkMoved: true, readEnd: 75),
@@ -2000,10 +2124,11 @@ void main() {
         await tap(tester, find.byTooltip('Cancel event'));
         await tap(tester, find.widgetWithText(FilledButton, 'Cancel event'));
 
-        expect(proposals.amends.single.toJson()['cancels'], [
-          {'event_id': 'read', 'counts_against_follow_through': true},
-        ]);
-        expect((await onCalendar('read')).isCancelled, isFalse);
+        expect(proposals.amends, isEmpty);
+        expect([
+          for (final e in await events.events(at(0), DateTime(2026, 10, 1)))
+            if (e.id == 'read' && !e.isCancelled) e,
+        ], isEmpty);
       });
     });
 
@@ -2042,24 +2167,28 @@ void main() {
         };
       }
 
-      /// Opens Lunch and moves its start a quarter hour earlier, over where
-      /// the calendar still has the ride.
-      Future<void> earlier(WidgetTester tester) async {
+      /// Opens Lunch and moves its start [steps] quarter hours earlier,
+      /// over where the calendar still has the ride.
+      Future<void> earlier(WidgetTester tester, [int steps = 3]) async {
         await tap(tester, find.text('Lunch'));
         await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
-        await tap(tester, find.byTooltip('Start 15 min earlier'));
+        for (var i = 0; i < steps; i++) {
+          await tap(tester, find.byTooltip('Start 15 min earlier'));
+        }
         await tap(tester, find.text('Save'));
       }
 
-      testWidgets('over an event the proposal changed edits the proposal, '
-          'taking it in: the calendar would refuse it', (tester) async {
+      testWidgets("moved to start before the proposal's through, it's an "
+          'edit of the layer, taking it in: only the edge moved', (
+        tester,
+      ) async {
         await open(tester, json: json(), also: [ride, lunch]);
         await earlier(tester);
 
         expect(proposals.amends.single.toJson(), {
           'updates': [
             {
-              'event': {'id': 'lunch', 'start': iso(12, 15)},
+              'event': {'id': 'lunch', 'start': iso(11, 45)},
             },
           ],
         });
@@ -2067,7 +2196,7 @@ void main() {
           proposals.proposal!
               .event('lunch')!
               .start
-              .isAtSameMomentAs(at(12, 15)),
+              .isAtSameMomentAs(at(11, 45)),
           isTrue,
         );
         expect(
@@ -2094,7 +2223,7 @@ void main() {
         );
         final shown = waiting.projectProposal(Proposal.fromJson(json()));
         expect(
-          shown.event('lunch')!.start.isAtSameMomentAs(at(12, 15)),
+          shown.event('lunch')!.start.isAtSameMomentAs(at(11, 45)),
           isTrue,
         );
         expect(
@@ -2109,53 +2238,349 @@ void main() {
         expect(proposals.amends.single.toJson(), {
           'updates': [
             {
-              'event': {'id': 'lunch', 'start': iso(12, 15)},
+              'event': {'id': 'lunch', 'start': iso(11, 45)},
             },
           ],
         });
       });
 
-      testWidgets('reaching too far past the proposal to be made in it says '
-          'to confirm it first', (tester) async {
-        // The ride this afternoon, after the talk; then a trip of days.
-        final base = json();
-        final later = {
+      testWidgets("moved a quarter hour earlier, still after the proposal's "
+          "through, it's the calendar's", (tester) async {
+        await open(tester, json: json(), also: [ride, lunch]);
+        await earlier(tester, 1);
+
+        expect(proposals.amends, isEmpty);
+        expect(
+          (await onCalendar('lunch')).start.isAtSameMomentAs(at(12, 15)),
+          isTrue,
+        );
+      });
+    });
+
+    group('the proposal as a layer over the calendar', () {
+      // A gym session before tea, on the calendar alone.
+      final gym = Event(
+        id: 'gym',
+        start: at(8, 15),
+        end: at(8, 45),
+        summary: 'Gym',
+      );
+
+      /// Long-presses Tea and drags it up an hour, over the gym session:
+      /// 8:15 to 9.
+      Future<void> teaOverGym(WidgetTester tester) async {
+        // The box pulses while it runs over an event: never settled.
+        Future<void> frames() async {
+          for (var i = 0; i < 10; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+        }
+
+        await toBand(tester);
+        await tester.longPress(find.text('Tea'));
+        await tester.pumpAndSettle();
+        await holdAndDrag(
+          tester,
+          find.byTooltip(RegExp(r'^Hold and drag to move the event')),
+          const Offset(0, -60 * defaultTimelineScale),
+        );
+        await frames();
+        await tester.tap(find.byTooltip('Move it here'));
+        await frames();
+      }
+
+      testWidgets('a move in the layer sends only that: what it runs right '
+          'over is asked about, and covered, not cancelled', (tester) async {
+        await open(tester, also: [gym]);
+        await teaOverGym(tester);
+
+        // Asked as a cancel is: it counts, this once.
+        expect(find.text('Cancel an event to make room?'), findsOneWidget);
+        await tester.tap(find.byType(SwitchListTile));
+        await tester.pump();
+        await tester.tap(find.text('Cancel it'));
+        await tester.pumpAndSettle();
+
+        // On the hour's grid: from 8.
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'tea', 'start': iso(8), 'end': iso(8, 45)},
+            },
+          ],
+          'follow_through': [
+            {'event_id': 'gym', 'counts_against_follow_through': true},
+          ],
+        });
+        // The gym session's covered by it, and still on the calendar.
+        final covered = proposals.proposal!.event('gym')!;
+        expect(covered.covered, isTrue);
+        expect(covered.coveredBy, 'tea');
+        expect(covered.countsAgainstFollowThrough, isTrue);
+        expect(proposals.proposal!.cancels.map((e) => e.id), contains('gym'));
+        expect((await onCalendar('gym')).isCancelled, isFalse);
+        expect(
+          find.text('Moved in what happened, to confirm. It covers 1 event.'),
+          findsOneWidget,
+        );
+        expect(
+          markLabels(tester),
+          contains('Covered by Tea, counts against follow-through'),
+        );
+      });
+
+      testWidgets('queued, what a move in the layer covers is worked out to '
+          'show it', (tester) async {
+        await open(tester, also: [gym], queued: true);
+        await teaOverGym(tester);
+        await tester.tap(find.text('Cancel it'));
+        await tester.pumpAndSettle();
+
+        final waiting = outbox!.pending.single;
+        expect(waiting.edits.followThrough.single, (
+          eventId: 'gym',
+          countsAgainstFollowThrough: false,
+        ));
+        final shown = waiting.projectProposal(
+          Proposal.fromJson(proposalJson()),
+        );
+        expect(shown.event('gym')!.covered, isTrue);
+        expect(shown.event('gym')!.countsAgainstFollowThrough, isFalse);
+        expect(shown.event('tea')!.start.isAtSameMomentAs(at(8)), isTrue);
+      });
+
+      testWidgets('an edge moved in the layer is sent alone, nothing made '
+          'room for', (tester) async {
+        await open(tester);
+        await tap(tester, find.text('Work'));
+        await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
+        await tap(tester, find.byTooltip('End 15 min later'));
+        await tap(tester, find.text('Save'));
+
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'work', 'end': iso(11, 15)},
+            },
+          ],
+        });
+      });
+
+      testWidgets("moved out of the layer -- to start at or after its "
+          "through -- it's the calendar's, and what the layer decided of it "
+          'is put back as planned', (tester) async {
+        await open(tester);
+        await toBand(tester);
+        await tester.longPress(find.text('Tea'));
+        await tester.pumpAndSettle();
+        // From 9:15 to noon, on the hour's grid: its through.
+        await dragBox(tester, const Duration(hours: 3));
+        await tester.tap(find.byTooltip('Move it here'));
+        await tester.pumpAndSettle();
+
+        expect(
+          (await onCalendar('tea')).start.isAtSameMomentAs(at(12)),
+          isTrue,
+        );
+        expect(proposals.amends.single.toJson(), {
+          'as_planned': ['tea'],
+        });
+      });
+
+      /// [proposalJson] with the layer running past its through: a new
+      /// event of the user's, Dance class, from 11:30 to 2:30 -- through
+      /// still noon -- cutting the talk to start at 2:30. Later, the user's
+      /// older edit of a nap, past the layer's end.
+      Map<String, Object?> layered({List<Object?> calendarEdits = const []}) {
+        final base = proposalJson();
+        return {
           ...base,
+          'layer_end': iso(14, 30),
+          'calendar_edits': calendarEdits,
           'events': [
             for (final e in base['events'] as List)
-              (e as Map)['id'] == 'ride'
-                  ? {...e, 'start': iso(15), 'end': iso(16)}
-                  : e,
+              if ((e as Map)['id'] != 'talk' && e['id'] != 'abc123def456c1') e,
+            {
+              'id': 'abc123def456u1',
+              'summary': 'Dance class',
+              'start': iso(11, 30),
+              'end': iso(14, 30),
+              'status': 'new',
+              'decided_by': 'user',
+            },
+            {
+              'id': 'talk',
+              'summary': 'Talk',
+              'start': iso(14, 30),
+              'end': iso(15),
+              'status': 'adjusted',
+              'planned_start': iso(14),
+              'planned_end': iso(15),
+              'cut_by': 'abc123def456u1',
+              'cut_by_summary': 'Dance class',
+            },
+            {
+              'id': 'nap',
+              'summary': 'Nap',
+              'start': iso(16),
+              'end': iso(17),
+              'status': 'adjusted',
+              'planned_start': iso(16, 30),
+              'planned_end': iso(17),
+              'decided_by': 'user',
+            },
           ],
         };
-        final trip = Event(
-          id: 'trip',
-          start: at(16),
-          end: DateTime(2026, 10, 3, 12),
-          summary: 'Trip',
+      }
+
+      final nap = Event(
+        id: 'nap',
+        start: at(16, 30),
+        end: at(17),
+        summary: 'Nap',
+      );
+
+      testWidgets("the layer's drawn over the calendar to its end, a line at "
+          'its through; a cut event at its cut times, marked with what cut '
+          "it; past the layer's end, the calendar's", (tester) async {
+        await open(tester, json: layered(), also: [nap]);
+        final timeline = tester.widget<DayTimeline>(find.byType(DayTimeline));
+        expect(timeline.review!.through.isAtSameMomentAs(at(12)), isTrue);
+        expect(timeline.review!.layerEnd!.isAtSameMomentAs(at(14, 30)), isTrue);
+        expect(find.text('through 12:00 PM'), findsOneWidget);
+
+        final talk = timeline.events.firstWhere((e) => e.id == 'talk');
+        expect(talk.start.isAtSameMomentAs(at(14, 30)), isTrue);
+        expect(timeline.marks['talk']!.label, 'Cut by Dance class');
+        expect(timeline.marks['talk']!.icon, Icons.content_cut);
+        // The nap, as the calendar has it.
+        final drawn = timeline.events.firstWhere((e) => e.id == 'nap');
+        expect(drawn.start.isAtSameMomentAs(at(16, 30)), isTrue);
+      });
+
+      testWidgets('an event the layer cuts at its start is highlighted, '
+          'asked to be shown, where it starts once cut', (tester) async {
+        final requests = StreamController<Event>();
+        addTearDown(requests.close);
+        await open(tester, json: layered(), showEvents: requests.stream);
+        // Short enough that the afternoon can be scrolled near the top.
+        tester.view.physicalSize = const Size(800, 700);
+        await tester.pumpAndSettle();
+        // Asked as the calendar has it: from 2.
+        requests.add(Event(id: 'talk', start: at(14), end: at(15)));
+        for (var i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+
+        final timeline = tester.widget<DayTimeline>(today.first);
+        expect(timeline.highlighted, 'talk');
+        final talk = timeline.events.firstWhere((e) => e.id == 'talk');
+        expect(talk.start.isAtSameMomentAs(at(14, 30)), isTrue);
+        // The ring round it, from its cut start; scrolled to that.
+        final ring = find.byWidgetPredicate(
+          (w) => w.runtimeType.toString() == '_Highlight',
         );
+        final top = tester.getTopLeft(today.first).dy;
+        final ringTop = tester.getTopLeft(ring).dy + 3;
+        expect(ringTop, moreOrLessEquals(top + y(at(14, 30)), epsilon: 0.5));
+        final scrollable = find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byWidgetPredicate(
+                (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+              ),
+            )
+            .first;
+        // Scrolled to put its cut start near the top, not its planned one.
+        expect(
+          tester.state<ScrollableState>(scrollable).position.pixels,
+          moreOrLessEquals(y(at(14, 30)) - 48, epsilon: 1),
+        );
+
+        // The highlight goes.
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('stepped to by key, an event the layer cuts at its start '
+          'is focused where it starts once cut', (tester) async {
+        await open(tester, json: layered(), hotkeys: Hotkeys());
+        await tester.sendKeyEvent(LogicalKeyboardKey.end);
+        await tester.pumpAndSettle();
+
+        final focus = FocusManager.instance.primaryFocus!;
+        expect(focus.debugLabel, 'Event talk');
+        final top = tester.getTopLeft(today.first).dy;
+        expect(
+          focus.rect.top,
+          moreOrLessEquals(top + y(at(14, 30)), epsilon: 2),
+        );
+      });
+
+      testWidgets("abandoning it lists the calendar edits made around it, "
+          'which stay, and the overlap one is left in', (tester) async {
         await open(
           tester,
-          json: later,
-          also: [
-            Event(id: 'ride', start: at(15), end: at(16), summary: 'Ride'),
-            trip,
-          ],
+          json: layered(
+            calendarEdits: [
+              {
+                'event_id': 'call',
+                'summary': 'Call',
+                'start': iso(11),
+                'end': iso(11, 30),
+                'kind': 'freed',
+                'overlaps': {
+                  'event_id': 'work',
+                  'summary': 'Work',
+                  'start': iso(10),
+                  'end': iso(12),
+                },
+              },
+            ],
+          ),
         );
-        await tap(tester, find.text('Trip'));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(ProposalBar),
+            matching: find.byTooltip('More'),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Abandon it'));
+        await tester.pumpAndSettle();
+        expect(find.text('Abandon it?'), findsOneWidget);
+        expect(find.text('Call, 11:00 AM – 11:30 AM, stays.'), findsOneWidget);
+        expect(
+          find.text('Work (to 12:00 PM) will overlap Call (11:00 AM).'),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Keep it'));
+        await tester.pumpAndSettle();
+      });
+
+      testWidgets('a calendar write the server refuses as under the layer '
+          "says the server's words", (tester) async {
+        await open(tester, json: layered(), also: [nap]);
+        const said =
+            "Nothing was changed. - 'Nap' (16:15–17:00, as asked) lands "
+            "under the open compaction proposal: 'Dance class' runs until "
+            '16:30 there. End it earlier in the proposal first '
+            '(amend_proposal), then make this change.';
+        events.refusal = McpException(
+          'Tool update_event failed: $said',
+          serverMessage: said,
+        );
+        expect(isUnderLayerRefusal(events.refusal!), isTrue);
+        await tap(tester, find.text('Nap'));
         await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
         await tap(tester, find.byTooltip('Start 15 min earlier'));
         await tap(tester, find.text('Save'));
 
+        expect(
+          find.textContaining("'Dance class' runs until 16:30 there"),
+          findsWidgets,
+        );
         expect(proposals.amends, isEmpty);
-        expect(
-          (await onCalendar('trip')).start.isAtSameMomentAs(at(16)),
-          isTrue,
-        );
-        expect(
-          find.textContaining('Confirm the proposal first'),
-          findsOneWidget,
-        );
       });
     });
 
@@ -2699,6 +3124,23 @@ class _HeldEvents extends InMemoryEventsRepository {
 
   /// While set, what [events] answers from, in place of what it has.
   List<Event>? answer;
+
+  /// While set, what an update is refused with.
+  Object? refusal;
+
+  @override
+  Future<List<Event>> updateEvent(
+    Event event,
+    Map<String, Object?> changes, {
+    bool allowCompactedChanges = false,
+  }) async {
+    if (refusal case final refusal?) throw refusal;
+    return super.updateEvent(
+      event,
+      changes,
+      allowCompactedChanges: allowCompactedChanges,
+    );
+  }
 
   @override
   Future<List<Event>> events(DateTime from, DateTime to) async {

@@ -6,6 +6,33 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.275.0
+
+- The open compaction proposal is a layer over the calendar. An edit goes
+  to it if the event starts before its through once edited, and to the
+  calendar otherwise. A layer edit sends only the edges and fields you
+  changed: the server works out what it cuts and covers, so the app no
+  longer sends the room it made around it.
+- Moving or creating an event over others in the layer still asks
+  whether each one it runs right over counts against follow-through.
+  The answers go with the edit: those events are covered, not
+  cancelled.
+- Moving an event out of the layer, to start at or after through, is a
+  calendar edit, and puts back as planned what the layer said of it.
+  A calendar edit the server refuses as under the layer says why.
+- The layer is drawn from the window's start to its end, which can run
+  past through to the end of the event going on then, with a line at
+  through. An event it cuts is drawn at its cut times, marked "Cut by"
+  what cut it. Past the layer's end, events are the calendar's.
+- Events the layer covers are listed with the cancels, "Covered by" what
+  covers it. Flipping whether one counts sends only that answer.
+- An event asked to be shown, from the home screen, say, is highlighted
+  and scrolled to where the layer has it: one it cuts, at its cut start.
+- Edits waiting to save show what they cut and cover, worked out
+  locally.
+- The "Abandon it?" dialog lists your calendar edits made around the
+  layer, which stay, and any overlap one will be left in.
+
 ## 7.274.0
 
 - Guided review: arrows by Next, or Confirm, go back and on, as P and
