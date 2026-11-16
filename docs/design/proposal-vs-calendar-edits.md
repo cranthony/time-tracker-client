@@ -1,6 +1,6 @@
 # Calendar edits vs. the open compaction proposal: the layer model
 
-Status: redesign of 2026-11-16 around the user's layering idea. It replaces the earlier "soft made-room edits" and "split at `through`" designs. The user's answers to every open question are folded in, so the design is ready to build. Nothing is built yet.
+Status: redesign of 2026-11-16 around the user's layering idea. It replaces the earlier "soft made-room edits" and "split at `through`" designs. Built: server steps 1 and 2 (server PRs 341 and 342), and the client here.
 
 ## The model
 
@@ -90,7 +90,7 @@ Not in this design: getting that note to the round that later covers the gym. Wi
 **Proposal model**
 - A new derived field for the layer's end (say `layer_end`) beside `through`, on `get_proposal`, `prepare_compaction` and the status summary.
 - `events` ends with the layer's last event and whatever it cuts or covers. Planned events further on are no longer listed; the client draws those from the calendar.
-- Each implied event says what did it: `cut_by` or `covered_by`, naming the layer event, with a new `covered` status. Implied events have no `decided_by`.
+- Each implied event says what did it: `cut_by` or `covered_by`, naming the layer event. So the shipped app keeps reading them right, a covered event keeps the `cancelled` status and a cut one `adjusted`; a split's later pieces are `new`, keyed `<event id>~N`. Implied events have no `decided_by`.
 - A covered event carries whether it counts against follow-through and whom it counts against, as a cancelled event does. The user's answer is a new kind of user edit that says only whether the event counts. `amend_proposal` takes it alongside the edit that covers the event. It applies while the event is covered and never cancels it.
 - A list of the calendar writes made while the proposal was open that touched an event the layer cut or covered, or that landed in time the layer had freed (say `calendar_edits`). The abandon dialog reads it. An edit made in Google Calendar itself isn't recorded, but an overlap it would leave is still found when the calendar is checked at abandon.
 - `UserEdit` is otherwise unchanged. No `made_room_for`.
@@ -141,7 +141,7 @@ Not in this design: getting that note to the round that later covers the gym. Wi
 
 ## Build order
 
-1. **Server: the proposal becomes a layer.** Planner, model, guide and confirm together, since they have to agree: implied cuts, covers and splits, `layer_end`, `cut_by` and `covered_by`, the `covered` status, Claude refused past `through`, a user's end accepted past it, and the guide rewritten to match. The app as shipped keeps working against it: the whole spans and made-room edits it sends are simply explicit edits.
+1. **Server: the proposal becomes a layer.** Planner, model, guide and confirm together, since they have to agree: implied cuts, covers and splits, `layer_end`, `cut_by` and `covered_by`, Claude refused past `through`, a user's end accepted past it, and the guide rewritten to match. The app as shipped keeps working against it: the whole spans and made-room edits it sends are simply explicit edits.
 2. **Server: around the layer.** The calendar-write overlap check sees the layer, `calendar_edits` is recorded for the abandon dialog, and `amend_proposal` takes follow-through answers for covered events.
 3. **Client.** Routing by where the event starts, only the changed edges sent, the follow-through dialog for covered events, the layer drawn over the calendar, and the abandon dialog's list. It bumps the version and CHANGELOG as every client PR does.
 4. **Server: trim the events list.** `events` stops at the layer's last event and what it cuts or covers. This waits until the client draws later events from the calendar.
