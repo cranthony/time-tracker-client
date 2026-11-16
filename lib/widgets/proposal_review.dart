@@ -140,6 +140,8 @@ class ProposalBar extends StatelessWidget {
     this.onRevisited,
     this.onNext,
     this.nextTooltip,
+    this.onStepBack,
+    this.onStepOn,
     this.progress,
   });
 
@@ -150,6 +152,12 @@ class ProposalBar extends StatelessWidget {
   /// bar's other end. [nextTooltip] says what's next.
   final VoidCallback? onNext;
   final String? nextTooltip;
+
+  /// Back to the thing before what's shown (P), and on to the one
+  /// after (N), reviewed or not: arrows by Next or Confirm while there's
+  /// [progress] to show, each greyed out with nowhere to go.
+  final VoidCallback? onStepBack;
+  final VoidCallback? onStepOn;
 
   /// How far guided review has got, under the bar's row.
   final Widget? progress;
@@ -369,6 +377,27 @@ class ProposalBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 6),
+                if (progress != null && !stopped && !hidden) ...[
+                  HotkeyHint(
+                    Hotkey.reviewPrevious,
+                    child: IconButton(
+                      tooltip: 'Back to the one before',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: busy ? null : onStepBack,
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                  ),
+                  HotkeyHint(
+                    Hotkey.reviewNext,
+                    child: IconButton(
+                      tooltip: 'On to the one after',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: busy ? null : onStepOn,
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                ],
                 if (this.busy)
                   const Padding(
                     padding: EdgeInsets.all(8),
@@ -388,7 +417,7 @@ class ProposalBar extends StatelessWidget {
                   Tooltip(
                     message: nextTooltip ?? 'Next to review',
                     child: HotkeyHint(
-                      Hotkey.reviewNext,
+                      Hotkey.reviewUnseen,
                       child: FilledButton(
                         onPressed: busy ? null : onNext,
                         style: _compact,

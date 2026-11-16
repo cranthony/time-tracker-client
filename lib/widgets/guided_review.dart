@@ -36,6 +36,19 @@ ReviewStep? nextToReview(
   return null;
 }
 
+/// The step after [current] in [steps], [seen] or not; null for the
+/// last. With none shown, where review left off: the first not seen, or
+/// else the first.
+ReviewStep? stepAfter(
+  List<ReviewStep> steps,
+  Set<String> seen, {
+  String? current,
+}) {
+  final at = current == null ? -1 : steps.indexWhere((s) => s.key == current);
+  if (at < 0) return nextToReview(steps, seen) ?? steps.firstOrNull;
+  return at + 1 < steps.length ? steps[at + 1] : null;
+}
+
 /// The step before [current] in [steps], seen or not; null for the
 /// first, or with none shown.
 ReviewStep? previousToReview(List<ReviewStep> steps, {String? current}) {

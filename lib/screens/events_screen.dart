@@ -995,9 +995,26 @@ class _EventsScreenState extends State<EventsScreen> {
     if (next != null) _goToStep(next);
   }
 
-  /// N: Next, while there's more to review; once all has been, it says
-  /// so, and confirms nothing -- that's left to the button.
+  /// N: on to the thing after what's shown, reviewed or not. At the
+  /// last, it says so -- and how to get to what's left, or to confirm.
   void _keyReviewNext() {
+    if (_proposalBusy) return;
+    final steps = _reviewSteps;
+    final next = stepAfter(steps, _reviewSeen, current: _shownStepKey);
+    if (next == null) {
+      HotkeyScope.maybeOf(context)?.say(
+        steps.every((s) => _reviewSeen.contains(s.key))
+            ? 'All reviewed: Ctrl+Enter to confirm it'
+            : 'Nothing after this: M for what is not yet reviewed',
+      );
+      return;
+    }
+    _goToStep(next);
+  }
+
+  /// M: Next, while there's more to review; once all has been, it says
+  /// so, and confirms nothing -- that's left to the button.
+  void _keyReviewUnseen() {
     if (_proposalBusy) return;
     final next = nextToReview(
       _reviewSteps,
@@ -3553,10 +3570,16 @@ class _EventsScreenState extends State<EventsScreen> {
       _keyConfirm,
       when: () => _proposal != null,
     ),
-    // A proposal's review, while it has anything to: back and on.
+    // A proposal's review, while it has anything to: back and on, and
+    // on to what's not yet reviewed.
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyN),
       _keyReviewNext,
+      when: () => _reviewSteps.isNotEmpty,
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyM),
+      _keyReviewUnseen,
       when: () => _reviewSteps.isNotEmpty,
     ),
     for (final trigger in const [
@@ -7073,6 +7096,8 @@ class _EventsScreenState extends State<EventsScreen> {
           onUnsure: _goToUnsure,
           onNext: review?.next == null ? null : _reviewNext,
           nextTooltip: review?.nextTooltip,
+          onStepBack: review?.back == null ? null : _keyReviewPrevious,
+          onStepOn: review?.on == null ? null : _keyReviewNext,
           progress: review == null
               ? null
               : ReviewProgress(
@@ -7090,9 +7115,16 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Guided review of the open proposal, while there's anything in it to
-  /// review: the [ReviewProgress] sections, and what Next goes to, said.
+  /// review: the [ReviewProgress] sections, what Next goes to, said, and
+  /// what the arrows go back ([previousToReview]) and on ([stepAfter]) to.
   /// What's shown under the proposal's bar is now reviewed.
-  ({List<ReviewSection> sections, ReviewStep? next, String? nextTooltip})?
+  ({
+    List<ReviewSection> sections,
+    ReviewStep? next,
+    String? nextTooltip,
+    ReviewStep? back,
+    ReviewStep? on,
+  })?
   _review() {
     final proposal = _shownProposal;
     if (proposal == null) return null;
@@ -7117,6 +7149,8 @@ class _EventsScreenState extends State<EventsScreen> {
       sections: reviewSections(steps, _reviewSeen),
       next: next,
       nextTooltip: tooltip,
+      back: previousToReview(steps, current: shown),
+      on: stepAfter(steps, _reviewSeen, current: shown),
     );
   }
 
