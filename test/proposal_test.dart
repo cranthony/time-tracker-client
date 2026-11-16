@@ -2007,6 +2007,158 @@ void main() {
       });
     });
 
+    group("an edit of one of the calendar's events the proposal hasn't", () {
+      // A ride across the proposal's end, cancelled in it but still on the
+      // calendar till it's confirmed; lunch after it, on the calendar
+      // alone.
+      final ride = Event(
+        id: 'ride',
+        start: at(11, 45),
+        end: at(12, 30),
+        summary: 'Ride',
+      );
+      final lunch = Event(
+        id: 'lunch',
+        start: at(12, 30),
+        end: at(13),
+        summary: 'Lunch',
+      );
+      Map<String, Object?> json() {
+        final base = proposalJson();
+        return {
+          ...base,
+          'events': [
+            for (final e in base['events'] as List)
+              if ((e as Map)['id'] != 'abc123def456c1') e,
+            {
+              'id': 'ride',
+              'summary': 'Ride',
+              'start': iso(11, 45),
+              'end': iso(12, 30),
+              'status': 'cancelled',
+              'decided_by': 'user',
+            },
+          ],
+        };
+      }
+
+      /// Opens Lunch and moves its start a quarter hour earlier, over where
+      /// the calendar still has the ride.
+      Future<void> earlier(WidgetTester tester) async {
+        await tap(tester, find.text('Lunch'));
+        await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
+        await tap(tester, find.byTooltip('Start 15 min earlier'));
+        await tap(tester, find.text('Save'));
+      }
+
+      testWidgets('over an event the proposal changed edits the proposal, '
+          'taking it in: the calendar would refuse it', (tester) async {
+        await open(tester, json: json(), also: [ride, lunch]);
+        await earlier(tester);
+
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'lunch', 'start': iso(12, 15)},
+            },
+          ],
+        });
+        expect(
+          proposals.proposal!
+              .event('lunch')!
+              .start
+              .isAtSameMomentAs(at(12, 15)),
+          isTrue,
+        );
+        expect(
+          (await onCalendar('lunch')).start.isAtSameMomentAs(at(12, 30)),
+          isTrue,
+        );
+        expect(
+          find.text('Changed in what happened, to confirm.'),
+          findsOneWidget,
+        );
+      });
+
+      testWidgets('queued, it shows as taken in till it saves', (tester) async {
+        await open(tester, json: json(), also: [ride, lunch], queued: true);
+        await earlier(tester);
+
+        expect(proposals.amends, isEmpty);
+        final waiting = outbox!.pending.single;
+        expect(waiting.edits.takenIn.single.id, 'lunch');
+        // Kept so, as it waits.
+        expect(
+          PendingEventWrite.fromJson(waiting.toJson()).edits.takenIn.single.id,
+          'lunch',
+        );
+        final shown = waiting.projectProposal(Proposal.fromJson(json()));
+        expect(
+          shown.event('lunch')!.start.isAtSameMomentAs(at(12, 15)),
+          isTrue,
+        );
+        expect(
+          shown.event('lunch')!.plannedStart!.isAtSameMomentAs(at(12, 30)),
+          isTrue,
+        );
+        // Not sent with it.
+        expect(waiting.edits.toJson().containsKey('taken_in'), isFalse);
+
+        unawaited(outbox!.flush(ignoreBackoff: true));
+        await tester.pumpAndSettle();
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'lunch', 'start': iso(12, 15)},
+            },
+          ],
+        });
+      });
+
+      testWidgets('reaching too far past the proposal to be made in it says '
+          'to confirm it first', (tester) async {
+        // The ride this afternoon, after the talk; then a trip of days.
+        final base = json();
+        final later = {
+          ...base,
+          'events': [
+            for (final e in base['events'] as List)
+              (e as Map)['id'] == 'ride'
+                  ? {...e, 'start': iso(15), 'end': iso(16)}
+                  : e,
+          ],
+        };
+        final trip = Event(
+          id: 'trip',
+          start: at(16),
+          end: DateTime(2026, 10, 3, 12),
+          summary: 'Trip',
+        );
+        await open(
+          tester,
+          json: later,
+          also: [
+            Event(id: 'ride', start: at(15), end: at(16), summary: 'Ride'),
+            trip,
+          ],
+        );
+        await tap(tester, find.text('Trip'));
+        await tap(tester, inDialog(find.byIcon(Icons.schedule)).first);
+        await tap(tester, find.byTooltip('Start 15 min earlier'));
+        await tap(tester, find.text('Save'));
+
+        expect(proposals.amends, isEmpty);
+        expect(
+          (await onCalendar('trip')).start.isAtSameMomentAs(at(16)),
+          isTrue,
+        );
+        expect(
+          find.textContaining('Confirm the proposal first'),
+          findsOneWidget,
+        );
+      });
+    });
+
     testWidgets("an event's priority and whole description are "
         'edited in the proposal too', (tester) async {
       await open(tester);

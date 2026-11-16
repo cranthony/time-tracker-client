@@ -323,6 +323,11 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       proposal = proposal.copyWith(through: through);
     }
     final events = [...?proposal.events];
+    // What the server takes in, as the calendar has it, till it says.
+    for (final e in edits.takenIn) {
+      if (events.any((p) => p.id == e.id)) continue;
+      if (ProposalEvent.takenIn(e) case final taken?) events.add(taken);
+    }
     ProposalEvent? edited(ProposalEvent e, Map<String, Object?> json) =>
         ProposalEvent.fromJson({
           ...e.properties,
@@ -539,7 +544,7 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
     if (allowHistory) 'allow_history': true,
     'proposal_id': ?proposalId,
     'revision': ?revision,
-    if (!edits.isEmpty) 'edits': edits.toJson(),
+    if (!edits.isEmpty) 'edits': edits.toJson(stored: true),
     if (note.isNotEmpty) 'note': note,
     'feedback_id': ?feedbackId,
     'attempts': attempts,

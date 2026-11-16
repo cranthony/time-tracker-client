@@ -197,6 +197,15 @@ class ProposalEvent {
     );
   }
 
+  /// [event], one of the calendar's, as a proposal takes it in: on
+  /// schedule, where the calendar has it.
+  static ProposalEvent? takenIn(Event event) => fromJson({
+    ...event.toJson(),
+    'status': ProposalEventStatus.onSchedule.json,
+    'planned_start': localIsoTimestamp(event.start),
+    'planned_end': localIsoTimestamp(event.end),
+  });
+
   /// The proposal's fields, not the event's.
   static const _proposalOnly = {
     'status',

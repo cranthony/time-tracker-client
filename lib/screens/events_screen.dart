@@ -1736,13 +1736,21 @@ class _EventsScreenState extends State<EventsScreen> {
   bool _reviews(DateTime start, DateTime end) =>
       _editedProposal?.covers(start, end) ?? false;
 
+  /// How far past the open proposal's end an edit of it can reach: the
+  /// calendar's events the server takes in, those it names, run to two
+  /// days past it.
+  static const _proposalReach = Duration(hours: 47);
+
   /// Whether a write of [events] (those it changes or cancels) to [spans]
   /// (what it leaves them, and any it creates, covering) goes through the
   /// open proposal, as an edit of what happened: one of [events] is in
-  /// it, or a span is in its window -- or, [events] all being among its
-  /// events, a span overlaps one it changed, there or where the calendar
-  /// has it. The calendar would refuse that write for overlapping where
-  /// the proposal moved it from, and the app shows where it's moved to.
+  /// it, or a span is in its window -- or a span overlaps an event it
+  /// changed, there or where the calendar has it. The calendar would
+  /// refuse that write, as it still has the event where the plan did,
+  /// and the app shows it as the proposal has it: the proposal takes it,
+  /// taking in the calendar's events it names. One it can't take -- one
+  /// reaching before its window, or too far past it -- throws a
+  /// [ProposalEditException], to confirm the proposal first.
   bool _throughProposal(
     Iterable<Event> events,
     Iterable<(DateTime, DateTime)> spans,
@@ -1751,21 +1759,40 @@ class _EventsScreenState extends State<EventsScreen> {
       return true;
     }
     final proposal = _editedProposal;
-    if (proposal == null || events.any((e) => proposal.event(e.id) == null)) {
-      return false;
-    }
+    if (proposal == null) return false;
     final ids = {for (final e in events) e.id};
     bool overlaps((DateTime, DateTime) s, DateTime start, DateTime end) =>
         s.$1.isBefore(end) && s.$2.isAfter(start);
-    return [
-      for (final e in proposal.events ?? const <ProposalEvent>[])
-        if (!ids.contains(e.id) && e.changed) e,
-    ].any(
-      (e) => spans.any(
-        (s) =>
-            overlaps(s, e.start, e.end) ||
-            overlaps(s, e.plannedStart ?? e.start, e.plannedEnd ?? e.end),
-      ),
+    final runInto =
+        [
+          for (final e in proposal.events ?? const <ProposalEvent>[])
+            if (!ids.contains(e.id) && e.changed) e,
+        ].where(
+          (e) => spans.any(
+            (s) =>
+                overlaps(s, e.start, e.end) ||
+                overlaps(s, e.plannedStart ?? e.start, e.plannedEnd ?? e.end),
+          ),
+        );
+    if (runInto.isEmpty) return false;
+    final reach = proposal.through.add(_proposalReach);
+    final taken = [
+      for (final e in events)
+        if (proposal.event(e.id) == null) (e.start, e.end),
+      ...spans,
+    ];
+    if (taken.every(
+      (s) => !s.$1.isBefore(proposal.windowStart) && !s.$2.isAfter(reach),
+    )) {
+      return true;
+    }
+    final names = _reviewedNames;
+    final named = [for (final e in runInto) '“${names[e.id] ?? e.id}”'];
+    throw ProposalEditException(
+      'This runs into ${named.join(', ')}, which the open proposal changes '
+      "but the calendar has as planned till it's confirmed -- and it "
+      "reaches too far outside the proposal's time to be made in it. "
+      'Confirm the proposal first, then make this change.',
     );
   }
 
@@ -1808,6 +1835,24 @@ class _EventsScreenState extends State<EventsScreen> {
   }) {
     final (written, covered) = _written(over);
     return _throughProposal([...events, ...written], [...spans, ...covered]);
+  }
+
+  /// [edits] of [proposal], with the calendar's events they name that it
+  /// doesn't have yet, as the calendar has them: the server takes them
+  /// in, and they're shown so till it says.
+  ProposalEdits _takingIn(ProposalEdits edits, Proposal proposal) {
+    final named = edits.eventIds.where((id) => proposal.event(id) == null);
+    if (named.isEmpty) return edits;
+    final ids = named.toSet();
+    final calendar = _store.between(
+      proposal.windowStart.subtract(const Duration(days: 1)),
+      proposal.through.add(_proposalReach + const Duration(days: 1)),
+    );
+    final taken = {
+      for (final e in calendar)
+        if (e.id case final id? when ids.contains(id)) id: e,
+    };
+    return taken.isEmpty ? edits : edits.takingIn([...taken.values]);
   }
 
   /// Records [changes] to [event] in what the open proposal says happened.
@@ -3090,6 +3135,7 @@ class _EventsScreenState extends State<EventsScreen> {
     if (proposal == null || repository == null) {
       throw StateError('No proposal is open.');
     }
+    edits = _takingIn(edits, proposal);
     if (movesRevisited(edits, proposal) case final e?) {
       throw McpException(
         '“${e.summary ?? '(no summary)'}” is an earlier event a historical note '
@@ -4189,16 +4235,15 @@ class _EventsScreenState extends State<EventsScreen> {
       'start': localIsoTimestamp(start),
       'end': localIsoTimestamp(end),
     };
-    // In what happened, to confirm: the proposal's changed.
-    final review = _overThroughProposal(
-      writing,
-      events: [event],
-      spans: [span, for (final c in commutes) ?_spanOf(c)],
-    );
     var changed = const <Event>[];
     Proposal? amended;
     try {
-      if (review) {
+      // In what happened, to confirm: the proposal's changed.
+      if (_overThroughProposal(
+        writing,
+        events: [event],
+        spans: [span, for (final c in commutes) ?_spanOf(c)],
+      )) {
         amended = await _amend(
           ProposalEdits.over(
             writing,

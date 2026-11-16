@@ -6,6 +6,17 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.271.0
+
+- While a proposal is open, an edit that runs into an event it changed --
+  one it cancelled or moved, still on the calendar where it was planned
+  till the proposal's confirmed -- is made in the proposal, even past the
+  proposal's end: the calendar's events the edit changes are taken into
+  it, and shown so straight away. Before, it went to the calendar, which
+  refused it for overlapping the event the proposal had taken away. An
+  edit reaching too far outside the proposal to be made in it says to
+  confirm the proposal first, before anything's saved.
+
 ## 7.270.0
 
 - A trait's stories are written in Markdown: what they did, and why it's
