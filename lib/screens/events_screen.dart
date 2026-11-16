@@ -7096,6 +7096,8 @@ class _EventsScreenState extends State<EventsScreen> {
           onUnsure: _goToUnsure,
           onNext: review?.next == null ? null : _reviewNext,
           nextTooltip: review?.nextTooltip,
+          onStepBack: review?.back == null ? null : _keyReviewPrevious,
+          onStepOn: review?.on == null ? null : _keyReviewNext,
           progress: review == null
               ? null
               : ReviewProgress(
@@ -7113,9 +7115,16 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// Guided review of the open proposal, while there's anything in it to
-  /// review: the [ReviewProgress] sections, and what Next goes to, said.
+  /// review: the [ReviewProgress] sections, what Next goes to, said, and
+  /// what the arrows go back ([previousToReview]) and on ([stepAfter]) to.
   /// What's shown under the proposal's bar is now reviewed.
-  ({List<ReviewSection> sections, ReviewStep? next, String? nextTooltip})?
+  ({
+    List<ReviewSection> sections,
+    ReviewStep? next,
+    String? nextTooltip,
+    ReviewStep? back,
+    ReviewStep? on,
+  })?
   _review() {
     final proposal = _shownProposal;
     if (proposal == null) return null;
@@ -7140,6 +7149,8 @@ class _EventsScreenState extends State<EventsScreen> {
       sections: reviewSections(steps, _reviewSeen),
       next: next,
       nextTooltip: tooltip,
+      back: previousToReview(steps, current: shown),
+      on: stepAfter(steps, _reviewSeen, current: shown),
     );
   }
 

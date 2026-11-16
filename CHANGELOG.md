@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.274.0
+
+- Guided review: arrows by Next, or Confirm, go back and on, as P and
+  N do -- reviewed or not. Each is greyed out with nowhere to go;
+  holding Ctrl shows P and N on them.
+
 ## 7.273.0
 
 - Guided review by key: N goes on to the thing after what's shown,

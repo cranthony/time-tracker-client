@@ -410,6 +410,52 @@ void main() {
       }
     });
 
+    testWidgets('guided review: arrows by Next go back and on, reviewed '
+        'or not, greyed out at either end', (tester) async {
+      await open(tester);
+      const back = 'Back to the one before', on = 'On to the one after';
+      Finder button(String tooltip) => find.ancestor(
+        of: find.byTooltip(tooltip),
+        matching: find.byType(IconButton),
+      );
+      IconButton arrow(String tooltip) =>
+          tester.widget<IconButton>(button(tooltip));
+      Future<void> tap(String tooltip) async {
+        await tester.tap(button(tooltip));
+        await tester.pumpAndSettle();
+      }
+
+      String shown() => tester
+          .widget<ProposalAdditionStrip>(find.byType(ProposalAdditionStrip))
+          .addition
+          .name;
+
+      // In the same row as Next.
+      expect(
+        tester.getCenter(button(on)).dy,
+        closeTo(
+          tester.getCenter(find.widgetWithText(FilledButton, 'Next')).dy,
+          4,
+        ),
+      );
+      expect(shown(), 'Jo');
+      expect(arrow(back).onPressed, isNull);
+      await tap(on);
+      expect(shown(), 'Make matcha');
+      await tap(back);
+      expect(shown(), 'Jo');
+      // On to one already reviewed, as N does.
+      await tap(on);
+      expect(shown(), 'Make matcha');
+      await tap(on);
+      expect(shown(), 'The teahouse');
+      expect(arrow(on).onPressed, isNull);
+      // All reviewed: still there, by Confirm.
+      expect(find.widgetWithText(FilledButton, 'Confirm'), findsOneWidget);
+      await tap(back);
+      expect(shown(), 'Make matcha');
+    });
+
     testWidgets('guided review by key: at the last with more to review, N '
         'says so, and M goes back to it; from a page not reviewed, N picks '
         'up where review left off', (tester) async {
