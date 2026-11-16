@@ -35,7 +35,28 @@ class ProposalEdits {
     this.goalChanges = const [],
     this.traitExamples = const [],
     this.through,
+    this.takenIn = const [],
   });
+
+  /// The calendar's events, as it has them, that the edits name but the
+  /// proposal doesn't have yet: the server takes them in (see
+  /// `amend_proposal`). Kept to show the edits before they're saved, not
+  /// sent.
+  final List<Event> takenIn;
+
+  /// These, with [takenIn] for what they take in.
+  ProposalEdits takingIn(List<Event> takenIn) => ProposalEdits(
+    updates: updates,
+    creates: creates,
+    cancels: cancels,
+    asPlanned: asPlanned,
+    notes: notes,
+    additions: additions,
+    goalChanges: goalChanges,
+    traitExamples: traitExamples,
+    through: through,
+    takenIn: takenIn,
+  );
 
   /// Where to extend the proposal to: later than its `through`, no later
   /// than now. Each note it takes in is added where it falls, unless
@@ -100,7 +121,11 @@ class ProposalEdits {
     for (final n in notes) n.noteId,
   };
 
-  Map<String, Object?> toJson() => {
+  /// As `amend_proposal` takes them -- or, [stored], as they're kept
+  /// waiting to be sent, with [takenIn].
+  Map<String, Object?> toJson({bool stored = false}) => {
+    if (stored && takenIn.isNotEmpty)
+      'taken_in': [for (final e in takenIn) e.toJson()],
     if (through case final t?) 'through': localIsoTimestamp(t),
     if (updates.isNotEmpty) 'updates': updates,
     if (creates.isNotEmpty) 'creates': creates,
@@ -226,6 +251,7 @@ class ProposalEdits {
       traitExamples: [
         for (final e in maps('trait_examples')) ?StoryEdit.fromJson(e),
       ],
+      takenIn: [for (final e in maps('taken_in')) Event.fromJson(e)],
     );
   }
 
@@ -718,6 +744,11 @@ class InMemoryProposalRepository implements ProposalRepository {
     calls.add('amend_proposal');
     final current = _open();
     final events = [...?current.events];
+    // The calendar's events they name, taken in as the server takes them.
+    for (final e in edits.takenIn) {
+      if (events.any((p) => p.id == e.id)) continue;
+      if (ProposalEvent.takenIn(e) case final taken?) events.add(taken);
+    }
     // Any of its events, as the server takes them: those still planned,
     // after what happened, too -- moved aside, say.
     int indexOf(String id) {
