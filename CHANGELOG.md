@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.272.0
+
+- Asked whether cancelling an event counts against follow-through, J
+  and K go from one event's switch to the next, and Enter or Space flips
+  it. Ctrl+Enter cancels them, as the cancel button does; holding Ctrl
+  shows it there.
+- In that dialog, holding Ctrl shows each switch's digit (1-9) in full:
+  before, the edge of the list cut the badges off.
+
 ## 7.271.0
 
 - While a proposal is open, an edit that runs into an event it changed --
