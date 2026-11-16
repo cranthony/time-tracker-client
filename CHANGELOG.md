@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.273.0
+
+- Guided review by key: N goes on to the thing after what's shown,
+  reviewed or not, so stepping back with P or Shift+N and on again
+  with N goes through each in turn. Before, N skipped to the next not
+  yet reviewed. At the last, N says so.
+- M goes to the next thing not yet reviewed, as Next does and N did;
+  holding Ctrl shows M on Next. From a page that isn't reviewed --
+  follow-through, say -- N picks up there too.
+
 ## 7.272.0
 
 - Asked whether cancelling an event counts against follow-through, J

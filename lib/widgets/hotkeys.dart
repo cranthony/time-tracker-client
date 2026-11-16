@@ -223,6 +223,11 @@ class Hotkey {
   );
   static const reviewNext = Hotkey(
     'N',
+    "In a proposal's review, go on to the thing after, reviewed or not",
+    HotkeyPlace.events,
+  );
+  static const reviewUnseen = Hotkey(
+    'M',
     "In a proposal's review, go to the next thing not yet reviewed, as "
         'Next does; once all have been, it confirms nothing -- that stays '
         'its button',
@@ -477,6 +482,7 @@ class Hotkey {
     tabGoals,
     reviewNext,
     reviewPrevious,
+    reviewUnseen,
     confirmProposal,
     pickDay,
     create,

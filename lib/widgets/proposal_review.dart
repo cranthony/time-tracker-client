@@ -388,7 +388,7 @@ class ProposalBar extends StatelessWidget {
                   Tooltip(
                     message: nextTooltip ?? 'Next to review',
                     child: HotkeyHint(
-                      Hotkey.reviewNext,
+                      Hotkey.reviewUnseen,
                       child: FilledButton(
                         onPressed: busy ? null : onNext,
                         style: _compact,

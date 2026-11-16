@@ -358,7 +358,8 @@ void main() {
     });
 
     testWidgets('guided review by key: N goes on, P and Shift+N go back, '
-        'and once all is reviewed N confirms nothing', (tester) async {
+        'reviewed or not; M goes to what is not yet reviewed; and once all '
+        'is, neither confirms', (tester) async {
       await open(tester, hotkeys: Hotkeys());
       Future<void> press(LogicalKeyboardKey key, {bool shift = false}) async {
         if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
@@ -380,22 +381,68 @@ void main() {
       // At the first: nothing before it.
       await press(LogicalKeyboardKey.keyP);
       expect(shown(), 'Jo');
+      // On to the one after, though it's been reviewed.
       await press(LogicalKeyboardKey.keyN);
-      await press(LogicalKeyboardKey.keyN);
+      expect(shown(), 'Make matcha');
+      await press(LogicalKeyboardKey.keyP);
+      // M skips it, for the one that hasn't been.
+      await press(LogicalKeyboardKey.keyM);
       expect(shown(), 'The teahouse');
       await press(LogicalKeyboardKey.keyN, shift: true);
       expect(shown(), 'Make matcha');
 
-      // All reviewed: N says so, and doesn't confirm.
-      await press(LogicalKeyboardKey.keyN);
+      // All reviewed: N goes on to the last, where it and M say so, and
+      // don't confirm.
       expect(find.text('Next'), findsNothing);
       await press(LogicalKeyboardKey.keyN);
-      expect(proposals.calls, isNot(contains('confirm_proposal')));
+      expect(shown(), 'The teahouse');
+      for (final key in [LogicalKeyboardKey.keyN, LogicalKeyboardKey.keyM]) {
+        await press(key);
+        expect(shown(), 'The teahouse');
+        expect(proposals.calls, isNot(contains('confirm_proposal')));
+        expect(
+          find.text('All reviewed: Ctrl+Enter to confirm it'),
+          findsOneWidget,
+        );
+        // Said for a while, then gone.
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('guided review by key: at the last with more to review, N '
+        'says so, and M goes back to it; from a page not reviewed, N picks '
+        'up where review left off', (tester) async {
+      await open(tester, extra: {'recap': recapJson()}, hotkeys: Hotkeys());
+      Future<void> press(LogicalKeyboardKey key) async {
+        await tester.sendKeyEvent(key);
+        await tester.pumpAndSettle();
+      }
+
+      String shown() => tester
+          .widget<ProposalAdditionStrip>(find.byType(ProposalAdditionStrip))
+          .addition
+          .name;
+
+      // To what Claude's unsure of, the last thing to review.
+      await tester.tap(find.bySemanticsLabel('Unsure: 0 of 1 reviewed'));
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Unsure: 1 of 1 reviewed'), findsOneWidget);
+      expect(find.byType(ProposalAdditionStrip), findsNothing);
+      await press(LogicalKeyboardKey.keyN);
+      expect(find.byType(ProposalAdditionStrip), findsNothing);
       expect(
-        find.text('All reviewed: Ctrl+Enter to confirm it'),
+        find.text('Nothing after this: M for what is not yet reviewed'),
         findsOneWidget,
       );
-      // Said for a while, then gone.
+      await press(LogicalKeyboardKey.keyM);
+      expect(shown(), 'Make matcha');
+
+      // Follow-through isn't reviewed: N goes on from what has been.
+      await page(tester, 'Follow-through (1 of 2)');
+      expect(find.byType(ProposalAdditionStrip), findsNothing);
+      await press(LogicalKeyboardKey.keyN);
+      expect(shown(), 'The teahouse');
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
     });

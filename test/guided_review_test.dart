@@ -39,6 +39,17 @@ void main() {
     );
   });
 
+  test('the step after is the following one, seen or not', () {
+    expect(stepAfter(_steps, {'n1', 'n2'}, current: 'n1')?.key, 'n2');
+    expect(stepAfter(_steps, {}, current: 'g1')?.key, 'c1');
+    // The last: none, even with some not seen.
+    expect(stepAfter(_steps, {'c1'}, current: 'c1'), isNull);
+    // None shown: where review left off, or else the first.
+    expect(stepAfter(_steps, {'n1'})?.key, 'n2');
+    expect(stepAfter(_steps, {'n1', 'n2', 'g1', 'c1'})?.key, 'n1');
+    expect(stepAfter(const [], {}), isNull);
+  });
+
   test('previous is the step before, seen or not', () {
     expect(previousToReview(_steps, current: 'g1')?.key, 'n2');
     expect(previousToReview(_steps, current: 'n1'), isNull);

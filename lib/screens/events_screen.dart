@@ -995,9 +995,26 @@ class _EventsScreenState extends State<EventsScreen> {
     if (next != null) _goToStep(next);
   }
 
-  /// N: Next, while there's more to review; once all has been, it says
-  /// so, and confirms nothing -- that's left to the button.
+  /// N: on to the thing after what's shown, reviewed or not. At the
+  /// last, it says so -- and how to get to what's left, or to confirm.
   void _keyReviewNext() {
+    if (_proposalBusy) return;
+    final steps = _reviewSteps;
+    final next = stepAfter(steps, _reviewSeen, current: _shownStepKey);
+    if (next == null) {
+      HotkeyScope.maybeOf(context)?.say(
+        steps.every((s) => _reviewSeen.contains(s.key))
+            ? 'All reviewed: Ctrl+Enter to confirm it'
+            : 'Nothing after this: M for what is not yet reviewed',
+      );
+      return;
+    }
+    _goToStep(next);
+  }
+
+  /// M: Next, while there's more to review; once all has been, it says
+  /// so, and confirms nothing -- that's left to the button.
+  void _keyReviewUnseen() {
     if (_proposalBusy) return;
     final next = nextToReview(
       _reviewSteps,
@@ -3553,10 +3570,16 @@ class _EventsScreenState extends State<EventsScreen> {
       _keyConfirm,
       when: () => _proposal != null,
     ),
-    // A proposal's review, while it has anything to: back and on.
+    // A proposal's review, while it has anything to: back and on, and
+    // on to what's not yet reviewed.
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyN),
       _keyReviewNext,
+      when: () => _reviewSteps.isNotEmpty,
+    ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyM),
+      _keyReviewUnseen,
       when: () => _reviewSteps.isNotEmpty,
     ),
     for (final trigger in const [
