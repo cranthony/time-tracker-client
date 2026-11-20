@@ -2349,6 +2349,152 @@ void main() {
         expect(shown.event('tea')!.start.isAtSameMomentAs(at(8)), isTrue);
       });
 
+      /// [proposalJson] with Work decided by Claude, on schedule, and
+      /// Dinner after it decided too -- from 11 to 11:30, planned later --
+      /// the walk cancelled and no email: two decided events end to end.
+      /// With [tea], Tea from 8:30 to 9:45.
+      Map<String, Object?> decided({(int, int, int, int)? tea}) {
+        final base = proposalJson();
+        return {
+          ...base,
+          'events': [
+            for (final e in base['events'] as List)
+              if ((e as Map)['id'] == 'tea' && tea != null)
+                {...e, 'start': iso(tea.$1, tea.$2), 'end': iso(tea.$3, tea.$4)}
+              else if (e['id'] == 'work')
+                {...e, 'decided_by': 'claude'}
+              else if (e['id'] != 'abc123def456c1')
+                e,
+            {
+              'id': 'dinner',
+              'summary': 'Dinner',
+              'start': iso(11),
+              'end': iso(11, 30),
+              'status': 'adjusted',
+              'planned_start': iso(11, 30),
+              'planned_end': iso(12),
+              'decided_by': 'claude',
+            },
+          ],
+        };
+      }
+
+      final dinner = Event(
+        id: 'dinner',
+        start: at(11, 30),
+        end: at(12),
+        summary: 'Dinner',
+      );
+
+      /// Long-presses Work and stretches it a step, an hour: [later], to
+      /// noon; else from 9.
+      Future<void> stretchWork(WidgetTester tester, {bool later = true}) async {
+        Future<void> frames() async {
+          for (var i = 0; i < 10; i++) {
+            await tester.pump(const Duration(milliseconds: 100));
+          }
+        }
+
+        await toBand(tester);
+        await tester.longPress(find.text('Work'));
+        await tester.pumpAndSettle();
+        final stretch = find.byTooltip(
+          later ? 'Stretch it later' : 'Stretch it earlier',
+        );
+        await tester.ensureVisible(stretch.last);
+        await frames();
+        await tester.tap(stretch.last);
+        await frames();
+        await tester.tap(find.byTooltip('Move it here'));
+        await frames();
+      }
+
+      testWidgets('stretched over an event the proposal decided, room is made '
+          'for it: cancelled, as the follow-through dialog said, in the '
+          'same amend', (tester) async {
+        await open(tester, json: decided(), also: [dinner]);
+        await stretchWork(tester);
+
+        expect(find.text('Cancel an event to make room?'), findsOneWidget);
+        await tester.tap(find.byType(SwitchListTile));
+        await tester.pump();
+        await tester.tap(find.text('Cancel it'));
+        await tester.pumpAndSettle();
+
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'work', 'end': iso(12)},
+            },
+          ],
+          'cancels': [
+            {'event_id': 'dinner', 'counts_against_follow_through': true},
+          ],
+        });
+        // Saved: the proposal took it.
+        final proposal = proposals.proposal!;
+        expect(proposal.event('work')!.end.isAtSameMomentAs(at(12)), isTrue);
+        expect(proposal.event('dinner')!.status, ProposalEventStatus.cancelled);
+        expect(proposal.event('dinner')!.countsAgainstFollowThrough, isTrue);
+        expect(proposal.event('dinner')!.covered, isFalse);
+      });
+
+      testWidgets('queued, the cancel of a decided event it covers is shown '
+          'till it saves', (tester) async {
+        await open(tester, json: decided(), also: [dinner], queued: true);
+        await stretchWork(tester);
+        await tester.tap(find.text('Cancel it'));
+        await tester.pumpAndSettle();
+
+        final waiting = outbox!.pending.single;
+        expect(waiting.edits.cancels.single, (
+          eventId: 'dinner',
+          countsAgainstFollowThrough: false,
+        ));
+        final shown = waiting.projectProposal(Proposal.fromJson(decided()));
+        expect(shown.event('dinner')!.status, ProposalEventStatus.cancelled);
+        expect(shown.event('work')!.end.isAtSameMomentAs(at(12)), isTrue);
+      });
+
+      testWidgets('stretched partly over an event the proposal decided, '
+          'it is trimmed: only the edge that moves', (tester) async {
+        await open(tester, json: decided(tea: (8, 30, 9, 45)));
+        await stretchWork(tester, later: false);
+
+        expect(find.text('Cancel an event to make room?'), findsNothing);
+        expect(proposals.amends.single.toJson(), {
+          'updates': [
+            {
+              'event': {'id': 'work', 'start': iso(9)},
+            },
+            {
+              'event': {'id': 'tea', 'end': iso(9)},
+            },
+          ],
+        });
+        final tea = proposals.proposal!.event('tea')!;
+        expect(tea.start.isAtSameMomentAs(at(8, 30)), isTrue);
+        expect(tea.end.isAtSameMomentAs(at(9)), isTrue);
+      });
+
+      test('the proposals in memory refuse two decided events that '
+          'overlap, as the server does', () async {
+        final proposals = _Proposals(Proposal.fromJson(decided()));
+        await expectLater(
+          proposals.amend(
+            proposals.proposal!,
+            ProposalEdits(
+              updates: [
+                {
+                  'event': {'id': 'work', 'end': iso(12)},
+                },
+              ],
+            ),
+          ),
+          throwsA(isA<McpException>()),
+        );
+      });
+
       testWidgets('an edge moved in the layer is sent alone, nothing made '
           'room for', (tester) async {
         await open(tester);
