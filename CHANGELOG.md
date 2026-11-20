@@ -6,6 +6,24 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.276.0
+
+- An edit of the open proposal's layer that runs into events the
+  proposal has decided -- Claude's decisions and your edits, events it
+  adds too -- makes room for them in the same amend again, as the server
+  refuses two decided events overlapping. Stretching Work over a Dinner
+  Claude had decided failed to save, and sat in "Events waiting to
+  save".
+  - One it covers whole is cancelled, counting against follow-through
+    as you said in the dialog that asks. Cancelling one the proposal
+    adds drops it.
+  - One it runs partly into is trimmed: only the edge that moves.
+  - One it falls inside is split, its rest made in the layer.
+- That's for a drag or resize, a new event in the layer, and a change of
+  times from an event's dialog, which now asks about what it covers
+  too. Events the proposal hasn't decided are still left to the layer
+  to cut and cover.
+
 ## 7.275.0
 
 - The open compaction proposal is a layer over the calendar. An edit goes

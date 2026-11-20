@@ -188,6 +188,7 @@ class BoxEffect {
     final updates = <(Event, Map<String, Object?>)>[];
     final creates = <Map<String, Object?>>[];
     final rests = <Map<String, Object?>>[];
+    final split = <(Event, Map<String, Object?>)>[];
     for (final p in pieces) {
       final e = p.event;
       if (p.rest) {
@@ -213,7 +214,9 @@ class BoxEffect {
         ));
       }
       for (final (from, to) in p.left.skip(1)) {
-        creates.add(OtherEvents.restOf(e, from, to));
+        final rest = OtherEvents.restOf(e, from, to);
+        creates.add(rest);
+        split.add((e, rest));
       }
     }
     overwrite = Overwrite(
@@ -225,6 +228,7 @@ class BoxEffect {
       for (final MapEntry(key: p, value: (from, to)) in moved.entries)
         (p.event, from, to, p.rest),
     ];
+    splits = split;
   }
 
   /// What it does to the others, as changes to write.
@@ -240,6 +244,10 @@ class BoxEffect {
   /// Each event pushed, where it goes, and whether it's the rest of one
   /// split.
   late final List<(Event, DateTime, DateTime, bool)> pushed;
+
+  /// Each event the box falls inside of, and the part of it left past the
+  /// box: one of [overwrite]'s creates.
+  late final List<(Event, Map<String, Object?>)> splits;
 }
 
 /// A piece of an event the box works with: the whole of it, or a part of

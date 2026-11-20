@@ -1849,7 +1849,8 @@ class _EventsScreenState extends State<EventsScreen> {
   ) async {
     final start = _timeIn(changes['start']) ?? event.start;
     if (_inLayer(start)) {
-      onAmended(await _amendUpdate(event, changes));
+      final room = await _roomIn(event, changes);
+      onAmended(await _amendUpdate(event, changes, room));
       return const [];
     }
     final writing = _outOfLayer(event, changes);
@@ -1886,11 +1887,14 @@ class _EventsScreenState extends State<EventsScreen> {
     return written;
   }
 
-  /// What the box's [effect] does to the events in its way that's the
-  /// user's own doing, kept as edits in the layer: those it pushes, moved
-  /// whole, and the rest of one split to push. The rest -- what's
-  /// trimmed, and what's covered -- the layer implies.
-  static Overwrite _pushedOnly(BoxEffect? effect) {
+  /// What the box's [effect] does to the events in its way that's sent
+  /// with an edit of the layer, as edits of their own: those it pushes,
+  /// moved whole, and the rest of one split to push; and what it does to
+  /// those the layer decided -- trimmed, split or cancelled -- as two
+  /// decided events may not overlap. The rest -- what's trimmed or
+  /// covered of those it didn't decide -- the layer implies. The cancels
+  /// count against follow-through as [counting] says.
+  Overwrite _layerOwn(BoxEffect? effect, {Set<String> counting = const {}}) {
     if (effect == null) return const Overwrite();
     final pushed = {
       for (final (e, _, _, rest) in effect.pushed)
@@ -1900,25 +1904,59 @@ class _EventsScreenState extends State<EventsScreen> {
       for (final (_, from, to, rest) in effect.pushed)
         if (rest) (from, to),
     ];
+    bool decided(Event e) => _decidedOf(e)?.live ?? false;
     final over = effect.overwrite;
     return Overwrite(
       updates: [
         for (final (e, changes) in over.updates)
-          if (pushed.contains(e.id)) (e, changes),
+          if (pushed.contains(e.id) || decided(e)) (e, changes),
+      ],
+      cancels: [
+        for (final e in over.cancels)
+          if (decided(e)) e,
       ],
       creates: [
         for (final c in over.creates)
           if (_spanOf(c) case (final from, final to)
               when rests.any((r) => r.$1 == from && r.$2 == to))
             c,
+        for (final (e, rest) in effect.splits)
+          if (decided(e)) rest,
       ],
+      countsAgainst: counting,
     );
   }
+
+  /// [own]'s changes ([_layerOwn]) as edits of the layer, with [updates]
+  /// and [creates] of the edit's own, and the [answers] for what it
+  /// covers.
+  static ProposalEdits _layerEdits(
+    Overwrite own, {
+    List<Map<String, Object?>> updates = const [],
+    List<Map<String, Object?>> creates = const [],
+    List<({String eventId, bool countsAgainstFollowThrough})> answers =
+        const [],
+  }) => ProposalEdits(
+    updates: [
+      ...updates,
+      for (final (e, changes) in own.updates) proposalUpdate(e, changes),
+    ],
+    creates: [
+      ...creates,
+      for (final rest in own.creates) proposalCreate(rest, strict: false),
+    ],
+    cancels: [
+      for (final e in own.cancels)
+        (eventId: e.id!, countsAgainstFollowThrough: own.counts(e)),
+    ],
+    followThrough: answers,
+  );
 
   /// Each of [covered] -- the events an edit of the layer runs right over
   /// -- and whether it counts against follow-through, as the user said
   /// ([counting]), for the amend that makes the edit.
-  /// Not those the layer decided: they're not covered, but in the way.
+  /// Not those the layer decided: they're not covered, but cancelled
+  /// outright to make room ([_layerOwn]).
   List<({String eventId, bool countsAgainstFollowThrough})> _answers(
     List<Event> covered,
     Set<String> counting,
@@ -1965,12 +2003,46 @@ class _EventsScreenState extends State<EventsScreen> {
     return taken.isEmpty ? edits : edits.takingIn([...taken.values]);
   }
 
-  /// Records [changes] to [event] in what the open proposal says happened.
-  Future<Proposal> _amendUpdate(Event event, Map<String, Object?> changes) =>
-      _amend(
-        ProposalEdits(updates: [proposalUpdate(event, changes)]),
-        label: 'Change ${_named(event)}, in what happened',
-      );
+  /// No room made: an edit leaving its times as they were.
+  static const _Room _noRoom = (Overwrite(), []);
+
+  /// The room [changes] to [event]'s times make in the open proposal's
+  /// layer, for an edit from a dialog: what they do to the events the
+  /// layer decided -- trimmed, split, or cancelled where they're covered
+  /// ([_layerOwn]) -- with whether each event they run right over counts
+  /// against follow-through, as the user's asked. Nothing if its times
+  /// don't change. Called off, it throws [CalledOff].
+  Future<_Room> _roomIn(Event event, Map<String, Object?> changes) async {
+    if (!changes.containsKey('start') && !changes.containsKey('end')) {
+      return _noRoom;
+    }
+    final (start, end) = _spanWith(event, changes);
+    if (!end.isAfter(start)) return _noRoom;
+    final effect = BoxEffect(_otherEvents(event), start: start, end: end);
+    if (!await _goalsFit(_layerOwn(effect).updates) || !mounted) {
+      throw const CalledOff();
+    }
+    final covered = effect.overwrite.cancels;
+    final asked = covered.isEmpty
+        ? const <String>{}
+        : await askFollowThrough(context, covered) ?? (throw const CalledOff());
+    return (_layerOwn(effect, counting: asked), _answers(covered, asked));
+  }
+
+  /// Records [changes] to [event] in what the open proposal says happened,
+  /// with the [room] they make there ([_roomIn]).
+  Future<Proposal> _amendUpdate(
+    Event event,
+    Map<String, Object?> changes, [
+    _Room? room,
+  ]) => _amend(switch (room) {
+    (final own, final answers) => _layerEdits(
+      own,
+      updates: [proposalUpdate(event, changes)],
+      answers: answers,
+    ),
+    null => ProposalEdits(updates: [proposalUpdate(event, changes)]),
+  }, label: 'Change ${_named(event)}, in what happened');
 
   /// Records in what the open proposal says happened that [event] didn't
   /// happen, [counts] saying whether that counts against follow-through.
@@ -4288,9 +4360,10 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// Saves the move of [_moving] to the box. Starting before the open
   /// proposal's `through`, it's an edit of the proposal's layer: only the
-  /// edges moved, and what it pushes, with whether each event it runs
-  /// right over counts against follow-through -- the layer cuts and
-  /// covers what's under it, so nothing else is sent. Otherwise it's the
+  /// edges moved, what it pushes, and room made for what the layer
+  /// decided (see [_layerOwn]), with whether each event it runs right
+  /// over counts against follow-through -- the layer cuts and covers the
+  /// rest of what's under it, so nothing else is sent. Otherwise it's the
   /// calendar's, with what it does to the events in its way, in one
   /// batch -- and what the layer decided of it is put back as planned.
   Future<void> _finishMoving() async {
@@ -4329,7 +4402,7 @@ class _EventsScreenState extends State<EventsScreen> {
         event,
         {'start': localIsoTimestamp(start), 'end': localIsoTimestamp(end)},
       ),
-      ..._withCommuteEdits(layer ? _pushedOnly(effect) : makingRoom).updates,
+      ..._withCommuteEdits(layer ? _layerOwn(effect) : makingRoom).updates,
     ])) {
       return;
     }
@@ -4347,24 +4420,15 @@ class _EventsScreenState extends State<EventsScreen> {
       if (layer) {
         // The commutes edited, as they're edited: not asked about, as
         // they're the move's own.
-        final writing = _withCommuteEdits(_pushedOnly(effect));
+        // Those the layer decided that it runs into made room for, as
+        // asked: what it covers of them cancelled.
+        final writing = _withCommuteEdits(_layerOwn(effect, counting: asked));
         amended = await _amend(
-          ProposalEdits(
-            updates: [
-              if (times.isNotEmpty) proposalUpdate(event, times),
-              for (final (e, changes) in writing.updates)
-                proposalUpdate(e, changes),
-            ],
-            creates: [
-              for (final c in commutes) proposalCreate(c),
-              for (final rest in writing.creates)
-                proposalCreate(rest, strict: false),
-            ],
-            cancels: [
-              for (final e in writing.cancels)
-                (eventId: e.id!, countsAgainstFollowThrough: false),
-            ],
-            followThrough: _answers(makingRoom.cancels, asked),
+          _layerEdits(
+            writing,
+            updates: [if (times.isNotEmpty) proposalUpdate(event, times)],
+            creates: [for (final c in commutes) proposalCreate(c)],
+            answers: _answers(makingRoom.cancels, asked),
           ),
           label: 'Move ${_named(event)}$adding, in what happened',
         );
@@ -4806,23 +4870,17 @@ class _EventsScreenState extends State<EventsScreen> {
             ? await askedInTheWayOf(fields)
             : const Overwrite();
         if (_inLayer(_spanOf(fields)?.$1 ?? start)) {
-          // The layer cuts and covers what's under it: only what it
-          // pushes is sent, and whether what it covers counts.
-          final pushed = overwrite
-              ? _pushedOnly(effectOf(fields))
+          // The layer cuts and covers what's under it that it didn't
+          // decide: only what it pushes is sent, room made for what it
+          // decided, and whether what it covers counts.
+          final own = overwrite
+              ? _layerOwn(effectOf(fields), counting: over.countsAgainst)
               : const Overwrite();
           amended = await _amend(
-            ProposalEdits(
-              creates: [
-                proposalCreate(fields),
-                for (final rest in pushed.creates)
-                  proposalCreate(rest, strict: false),
-              ],
-              updates: [
-                for (final (e, changes) in pushed.updates)
-                  proposalUpdate(e, changes),
-              ],
-              followThrough: _answers(over.cancels, over.countsAgainst),
+            _layerEdits(
+              own,
+              creates: [proposalCreate(fields)],
+              answers: _answers(over.cancels, over.countsAgainst),
             ),
             label: 'Add ${_nameOf(fields)}, to what happened',
           );
@@ -7927,3 +7985,11 @@ class _PageShift implements ValueListenable<double> {
   @override
   int get hashCode => Object.hash(pages, page);
 }
+
+/// The room an edit of the open proposal's layer makes, sent with it: its
+/// changes to the events the layer decided (see `_layerOwn`), and the
+/// follow-through answers for those it covers.
+typedef _Room = (
+  Overwrite,
+  List<({String eventId, bool countsAgainstFollowThrough})>,
+);
