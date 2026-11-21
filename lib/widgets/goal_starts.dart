@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
+import '../models/goal_queue.dart';
 import 'day_picker.dart';
 import 'duration_field.dart';
 import 'durations.dart';
 import 'goal_fields.dart' show deadlineAt;
 import 'goal_icon.dart';
+import 'goal_queue_picker.dart';
 import 'hotkeys.dart';
 import 'picker_sheet.dart';
 import 'tree_picker.dart';
@@ -194,13 +196,16 @@ class GoalStartsEditor extends StatelessWidget {
     List<Map<String, Object?>>? after,
     Object? delay = _keep,
     List<Map<String, Object?>>? holds,
+    Object? aheadOf = _keep,
   }) {
     final kept = value?['delay'];
     final d = identical(delay, _keep) ? kept : delay;
+    final ahead = identical(aheadOf, _keep) ? (value?[aheadOfKey]) : aheadOf;
     final next = <String, Object?>{
       if ((after ?? _after) case final a when a.isNotEmpty) 'after': a,
       'delay': ?d,
       if ((holds ?? _holds) case final h when h.isNotEmpty) 'hold_while': h,
+      if (after?.isNotEmpty ?? true) aheadOfKey: ?ahead,
     };
     onChanged(next.isEmpty ? null : next);
   }
@@ -271,6 +276,26 @@ class GoalStartsEditor extends StatelessWidget {
     );
   }
 
+  /// Puts it in a queue, where it's picked ([pickQueueSlot]): it waits for
+  /// the goal ahead of it there, and the one it's put ahead of, if any,
+  /// waits for it ([aheadOfKey]) -- in place of what else it waited for.
+  Future<void> _pickQueue(BuildContext context) async {
+    final slot = await pickQueueSlot(
+      context,
+      goals: goals,
+      goalId: goalId,
+      now: now,
+    );
+    final after = slot?.after;
+    if (slot == null || after == null) return;
+    _set(
+      after: [
+        {'goal_closed': after},
+      ],
+      aheadOf: slot.before,
+    );
+  }
+
   /// Adds a day picked -- from its start, or from a time on it, if one's
   /// given too.
   Future<void> _pickDay(BuildContext context) async {
@@ -337,7 +362,11 @@ class GoalStartsEditor extends StatelessWidget {
                   ),
                   label: Text(switch (t) {
                     {'goal_closed': final String id} =>
-                      'After “${tree[id] == null ? id : goalTitle(tree[id]!)}” closes',
+                      'After “${tree[id] == null ? id : goalTitle(tree[id]!)}” closes'
+                          '${switch (value?[aheadOfKey]) {
+                            final String b when tree[b] != null => ', before “${goalTitle(tree[b]!)}”',
+                            _ => '',
+                          }}',
                     {'at': final String at} =>
                       'From ${startLabel(context, at)}',
                     {'before_parent': final Map offset} => beforeParentLabel(
@@ -350,6 +379,7 @@ class GoalStartsEditor extends StatelessWidget {
                       for (final (j, u) in after.indexed)
                         if (j != i) u,
                     ],
+                    aheadOf: null,
                   ),
                 ),
             ],
@@ -361,6 +391,11 @@ class GoalStartsEditor extends StatelessWidget {
               avatar: const Icon(Icons.flag_outlined, size: 18),
               label: const Text('After a goal closes…'),
               onPressed: () => _pickGoal(context),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.low_priority, size: 18),
+              label: const Text('In a queue…'),
+              onPressed: () => _pickQueue(context),
             ),
             ActionChip(
               focusNode: dayFocus,

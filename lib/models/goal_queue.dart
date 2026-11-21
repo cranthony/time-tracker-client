@@ -370,3 +370,47 @@ List<QueueSlot> slotsIn(GoalQueue queue, {String? id, bool branches = false}) {
   walk(queue.front);
   return out;
 }
+
+/// In an `activate_when` the goal editor gives, the goal the goal's put
+/// ahead of in a queue ([QueueSlot.before]): it then waits for this one
+/// instead ([queuedAhead]). The app's own; never sent ([goalWire]).
+const aheadOfKey = 'ahead_of';
+
+/// [when], an `activate_when` as the editor gives it, for goal [id], with
+/// the goal it's put ahead of ([aheadOfKey]) taken out -- and the change
+/// that has that goal wait for [id] in place of the goal [id] now waits
+/// for.
+(Map<String, Object?>?, List<GoalChange>) queuedAhead(
+  List<Goal> goals,
+  String id,
+  Map<String, Object?>? when,
+) {
+  final before = when?[aheadOfKey];
+  if (when == null || before is! String) return (when, const []);
+  final cleaned = {...when}..remove(aheadOfKey);
+  final after = [
+    for (final t in cleaned['after'] as List? ?? const [])
+      if (t case {'goal_closed': final String a}) a,
+  ].firstOrNull;
+  final next = GoalTree(goals)[before];
+  if (after == null || next == null || !next.inactive) {
+    return (cleaned, const []);
+  }
+  return (
+    cleaned,
+    [
+      GoalUpdate(before, {
+        'activate_when': {
+          ...?next.activateWhen,
+          'after': [
+            for (final t in next.activateWhen?['after'] as List? ?? const [])
+              if (t case {'goal_closed': final String a} when a == after)
+                {'goal_closed': id}
+              else
+                t,
+          ],
+        },
+      }),
+    ],
+  );
+}
