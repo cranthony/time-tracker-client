@@ -300,6 +300,10 @@ Map<String, Object?> goalWire(Map<String, Object?> changes) {
     ..remove('due')
     ..remove('path')
     ..remove('habit_id');
+  // Where the editor put it in a queue: the app's own.
+  if (out['activate_when'] case final Map w when w.containsKey('ahead_of')) {
+    out['activate_when'] = {...w}..remove('ahead_of');
+  }
   final offset = changes['deadline_offset_minutes'];
   if (changes['deadline_rule'] case final Map rule) {
     out['deadline'] = rule;

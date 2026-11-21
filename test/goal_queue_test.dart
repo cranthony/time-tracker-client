@@ -190,4 +190,23 @@ void main() {
       'c/null',
     ]);
   });
+
+  test('a goal put ahead of another in a queue: that one waits for it, '
+      "and where it's put is never sent", () {
+    final when = {
+      'after': [
+        {'goal_closed': 'a'},
+      ],
+      aheadOfKey: 'b',
+    };
+    final (cleaned, more) = queuedAhead(queue, 'new', when);
+    expect(cleaned, {
+      'after': [
+        {'goal_closed': 'a'},
+      ],
+    });
+    final made = _made([...queue, _goal('new', after: 'a')], more);
+    expect(_queues(made), ['active: work > a > new > b > c']);
+    expect(goalWire({'activate_when': when})['activate_when'], cleaned);
+  });
 }

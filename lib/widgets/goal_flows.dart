@@ -304,6 +304,50 @@ class GoalActions {
     ValueChanged<Goal>? onCreated,
   }) async {
     if (changes.isEmpty) return true;
+    // A goal put ahead of another in a queue ([aheadOfKey]): that one
+    // waits for it -- in the same write, or, for a goal made, once it's
+    // made and has its id.
+    final aheadOf = <String, String>{};
+    changes = [
+      for (final c in changes)
+        switch (c) {
+          GoalUpdate(:final id, changes: final fields)
+              when fields['activate_when'] is Map =>
+            () {
+              final (waits, more) = queuedAhead(
+                goals,
+                id,
+                (fields['activate_when'] as Map).cast(),
+              );
+              return [
+                GoalUpdate(id, {...fields, 'activate_when': waits}),
+                ...more,
+              ];
+            }(),
+          GoalCreate(:final goal)
+              when goal.activateWhen?[aheadOfKey] is String =>
+            () {
+              aheadOf[goal.id] = goal.activateWhen![aheadOfKey] as String;
+              return [
+                GoalCreate(
+                  Goal.fromJson({
+                    ...goal.toJson(),
+                    'activate_when': {...goal.activateWhen!}
+                      ..remove(aheadOfKey),
+                  }),
+                ),
+              ];
+            }(),
+          _ => [c],
+        },
+    ].expand((c) => c).toList();
+    if (aheadOf.isNotEmpty) {
+      final given = onCreated;
+      onCreated = (created) {
+        given?.call(created);
+        _putAhead(created, aheadOf.values.first);
+      };
+    }
     // Several at once are checked as the server checks them: whole.
     final problems = changes.length > 1
         ? planned(goals, [GoalBatch(changes)], now: now())
@@ -333,6 +377,10 @@ class GoalActions {
         action: () async {
           final ids = await repository.changeGoals(changes);
           _shown(renamed(changes, ids));
+          for (final MapEntry(:key, :value) in aheadOf.entries) {
+            final made = tree[ids[key] ?? key];
+            if (made != null) _putAhead(made, value);
+          }
         },
       );
     }
@@ -493,11 +541,29 @@ class GoalActions {
   /// Adds a goal made of [fields], from the New goal sheet: shown in
   /// [memory] at once. Returns it as saved; throws if it can't be.
   Future<Goal> create(Map<String, Object?> fields) async {
+    final when = fields['activate_when'];
+    final ahead = when is Map ? when[aheadOfKey] : null;
     final created = await repository.createGoal(
-      Goal.fromJson({'id': '', ...fields}),
+      Goal.fromJson({
+        'id': '',
+        ...fields,
+        if (ahead != null)
+          'activate_when': {...when as Map}..remove(aheadOfKey),
+      }),
     );
     _shown([GoalCreate(created)]);
+    if (ahead is String) _putAhead(created, ahead);
     return created;
+  }
+
+  /// Has [before] wait for [made], just made, in place of the goal [made]
+  /// waits for: [made] put ahead of it in their queue.
+  void _putAhead(Goal made, String before) {
+    final (_, more) = queuedAhead(goals, made.id, {
+      ...?made.activateWhen,
+      aheadOfKey: before,
+    });
+    save("Couldn't put ${goalTitle(made)} in its queue", more).ignore();
   }
 
   /// Edits [goal] -- a change of its status made as [setStatus] makes it,

@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.282.0
+
+- A goal's Starts field has "In a queue…": it lists each queue in the
+  order its goals would start, each with when, and an "Insert here"
+  between them and at the end of each branch (or "New branch" behind a
+  goal others wait for). Picked, the goal waits for the one ahead of it,
+  and the one behind it waits for it, saved with the goal.
+
 ## 7.281.0
 
 - Pick a trait to focus on from the head of the day's summary on the
