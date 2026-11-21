@@ -206,6 +206,9 @@ enum OverdueGoalAction {
 /// [onOverdueAction] -- or nothing, if that's null. With [focus], keys
 /// can go to a group's first pill ([GoalsStripFocus.focusFirst]), and
 /// Tab and Shift+Tab go on from pill to pill, round all of them.
+/// With [onClosedHidden], the day's closed ones -- done, missed or
+/// obsolete, and the ghosts of misses -- end with a link: "Hide closed",
+/// or, [closedHidden], "Show N closed" in their place.
 class GoalsDueStrip extends StatelessWidget {
   const GoalsDueStrip({
     super.key,
@@ -222,7 +225,17 @@ class GoalsDueStrip extends StatelessWidget {
     this.onTap,
     this.onOverdueAction,
     this.focus,
+    this.closedHidden = false,
+    this.onClosedHidden,
   });
+
+  /// Whether the day's closed goals are hidden behind a "Show N closed"
+  /// link. Only if [onClosedHidden] is given: without it, they're shown.
+  final bool closedHidden;
+
+  /// What the "Show N closed" or "Hide closed" link does: called with
+  /// whether they're to be hidden. No link, if null.
+  final ValueChanged<bool>? onClosedHidden;
 
   /// Where keys go into it, if they can.
   final GoalsStripFocus? focus;
@@ -272,6 +285,13 @@ class GoalsDueStrip extends StatelessWidget {
       if (!goals.any((d) => d.id == g.id)) g,
   ];
 
+  /// How many of [goals] and [_ghosts] are closed: those the link
+  /// hides.
+  int get _closedCount => goals.where((g) => g.closed).length + _ghosts.length;
+
+  /// Whether the closed ones are hidden.
+  bool get _hiding => closedHidden && onClosedHidden != null;
+
   /// [upcoming], split into the first [upcomingPills], with a pill each,
   /// and the rest.
   (List<Goal> soon, List<Goal> later) get _ahead => (
@@ -293,6 +313,11 @@ class GoalsDueStrip extends StatelessWidget {
       color: colors.onSurfaceVariant,
     );
     final open = goals.where((g) => g.open).length;
+    final closedCount = onClosedHidden == null ? 0 : _closedCount;
+    final hiding = _hiding && closedCount > 0;
+    // Those with a pill: without the closed ones, if they're hidden.
+    final shownDue = hiding ? [...goals.where((g) => !g.closed)] : goals;
+    final shownGhosts = hiding ? const <Goal>[] : ghosts;
     final toggle = IconButton(
       visualDensity: VisualDensity.compact,
       tooltip: collapsed ? 'Show goals due' : 'Hide goals due',
@@ -348,7 +373,7 @@ class GoalsDueStrip extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${counts.join(', ')} · '
-                        '${[...goals, ...ghosts, ...late, ...soon].map(goalTitle).join(', ')}',
+                        '${[...shownDue, ...shownGhosts, ...late, ...soon].map(goalTitle).join(', ')}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: muted,
@@ -377,10 +402,18 @@ class GoalsDueStrip extends StatelessWidget {
                                 Wrap(
                                   spacing: 6,
                                   runSpacing: 6,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
                                   children: [
-                                    for (final g in goals) pill(g),
-                                    for (final g in ghosts)
+                                    for (final g in shownDue) pill(g),
+                                    for (final g in shownGhosts)
                                       pill(g, ghost: true),
+                                    if (closedCount > 0)
+                                      _ClosedLink(
+                                        hiding: hiding,
+                                        count: closedCount,
+                                        onPressed: () =>
+                                            onClosedHidden!(!hiding),
+                                      ),
                                   ],
                                 ),
                               ),
@@ -500,6 +533,34 @@ class GoalsDueStrip extends StatelessWidget {
   static String _timeLabel(BuildContext context, Goal goal) =>
       MaterialLocalizations.of(context)
           .formatTimeOfDay(TimeOfDay.fromDateTime(goal.due!));
+}
+
+/// The link after the day's goals that hides their closed ones -- "Hide
+/// closed" -- or, [hiding] them, shows the [count] of them again: "Show
+/// 3 closed".
+class _ClosedLink extends StatelessWidget {
+  const _ClosedLink({
+    required this.hiding,
+    required this.count,
+    required this.onPressed,
+  });
+
+  final bool hiding;
+  final int count;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: onPressed,
+    style: TextButton.styleFrom(
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(0, 24),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      textStyle: Theme.of(context).textTheme.labelMedium,
+    ),
+    child: Text(hiding ? 'Show $count closed' : 'Hide closed'),
+  );
 }
 
 /// [goal] as a pill, filled in its [color]: its title, its
