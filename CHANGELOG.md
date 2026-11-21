@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.278.0
+
+- The goals strip above the timeline can hide the day's closed goals --
+  done, missed and obsolete ones, and those missed that day: "Hide
+  closed" after them tucks them away, and "Show N closed" brings them
+  back. Your choice is remembered; until you make one, they're shown.
+
 ## 7.277.0
 
 - Dragging only one edge of an event the open proposal's layer had cut

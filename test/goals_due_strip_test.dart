@@ -629,6 +629,66 @@ void main() {
     expect(collapsed, isFalse);
   });
 
+  testWidgets('closed ones end with "Hide closed"; hidden, "Show N closed" '
+      'stands in for them; collapsed, the counts stay whole', (tester) async {
+    bool? hidden;
+    Future<void> show({
+      required bool closedHidden,
+      bool collapsed = false,
+      List<Goal>? due,
+      bool link = true,
+    }) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalsDueStrip(
+            goals: due ?? goalsDueOn(goals, day),
+            missed: [_goal('m', 'Ghost', '2026-10-20')],
+            collapsed: collapsed,
+            onCollapsed: (_) {},
+            closedHidden: closedHidden,
+            onClosedHidden: link ? (h) => hidden = h : null,
+          ),
+        ),
+      ),
+    );
+
+    await show(closedHidden: false);
+    expect(find.textContaining('Early'), findsOneWidget);
+    expect(find.textContaining('Ghost'), findsOneWidget);
+    await tester.tap(find.text('Hide closed'));
+    expect(hidden, isTrue);
+
+    await show(closedHidden: true);
+    expect(find.textContaining('Early'), findsNothing);
+    expect(find.textContaining('Ghost'), findsNothing);
+    expect(find.textContaining('Zebra'), findsOneWidget);
+    await tester.tap(find.text('Show 2 closed'));
+    expect(hidden, isFalse);
+
+    await show(closedHidden: true, collapsed: true);
+    expect(
+      find.textContaining('4 goals due (3 open), 1 missed · '),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Early'), findsNothing);
+
+    // All of the day's closed: just the link, to show them.
+    await show(
+      closedHidden: true,
+      due: [
+        for (final g in goalsDueOn(goals, day))
+          if (g.closed) g,
+      ],
+    );
+    expect(find.text('Show 2 closed'), findsOneWidget);
+    expect(find.textContaining('Early'), findsNothing);
+
+    // Without a way to hide them: shown, with no link.
+    await show(closedHidden: true, link: false);
+    expect(find.textContaining('Early'), findsOneWidget);
+    expect(find.textContaining('closed'), findsNothing);
+  });
+
   testWidgets("overdue goals follow the day's, each saying the day it was "
       'due, in the error color; tapping one opens it; nothing on a past '
       'or future day', (tester) async {

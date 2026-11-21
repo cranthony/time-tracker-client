@@ -500,6 +500,9 @@ class _EventsScreenState extends State<EventsScreen> {
   /// Whether the strip of goals due on the day is folded to a line.
   bool _goalsDueCollapsed = false;
 
+  /// Whether the day's closed goals are hidden in the goals strip.
+  bool _closedGoalsHidden = false;
+
   /// Whether Google Calendar's events are drawn over the user's own,
   /// rather than behind them.
   bool _googleOnTop = false;
@@ -1662,9 +1665,11 @@ class _EventsScreenState extends State<EventsScreen> {
         ? layered.start
         : event.start;
     final to = layered.end.isAfter(event.end) ? layered.end : event.end;
-    return _withProposal([event], from, to)
-            .where((e) => e.id == event.id)
-            .firstOrNull ??
+    return _withProposal(
+          [event],
+          from,
+          to,
+        ).where((e) => e.id == event.id).firstOrNull ??
         event;
   }
 
@@ -1762,8 +1767,7 @@ class _EventsScreenState extends State<EventsScreen> {
       for (final e in calendar)
         if (!ids.contains(e.id)) e,
       for (final e in here)
-        if (e.live || !covered(e))
-          e.toEvent(byId[e.id], proposal.addedNames),
+        if (e.live || !covered(e)) e.toEvent(byId[e.id], proposal.addedNames),
     ]..sort((a, b) => a.start.compareTo(b.start));
   }
 
@@ -1789,20 +1793,16 @@ class _EventsScreenState extends State<EventsScreen> {
   /// What the open proposal's layer has of [event], if it decided
   /// anything about it: moved out of the layer, it's put back as planned
   /// there, as the calendar write takes it.
-  ProposalEvent? _decidedOf(Event event) => switch (_editedProposal?.event(
-    event.id,
-  )) {
-    final e? when e.decidedBy != null => e,
-    _ => null,
-  };
+  ProposalEvent? _decidedOf(Event event) =>
+      switch (_editedProposal?.event(event.id)) {
+        final e? when e.decidedBy != null => e,
+        _ => null,
+      };
 
   /// [changes] to [event] that take it out of the open proposal's layer:
   /// both its times, as shown, if its times change -- the layer's say on
   /// it goes. Refused for one the layer makes, which the calendar hasn't.
-  Map<String, Object?> _outOfLayer(
-    Event event,
-    Map<String, Object?> changes,
-  ) {
+  Map<String, Object?> _outOfLayer(Event event, Map<String, Object?> changes) {
     final decided = _decidedOf(event);
     if (decided == null) return changes;
     if (decided.status == ProposalEventStatus.created) {
@@ -1834,9 +1834,9 @@ class _EventsScreenState extends State<EventsScreen> {
   }
 
   /// [time] as a time of day, as the app shows it.
-  String _timeOf(DateTime time) => MaterialLocalizations.of(
-    context,
-  ).formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
+  String _timeOf(DateTime time) =>
+      MaterialLocalizations.of(context)
+          .formatTimeOfDay(TimeOfDay.fromDateTime(time.toLocal()));
 
   /// Saves [changes] to [event]: in the open proposal's layer, if it
   /// starts before its `through` after them -- [onAmended] told of the
@@ -2232,6 +2232,7 @@ class _EventsScreenState extends State<EventsScreen> {
     _loadSummaryCollapsed();
     _loadAllDayCollapsed();
     _loadGoalsDueCollapsed();
+    _loadClosedGoalsHidden();
     _loadWeatherCollapsed();
     // Once the scopes above can be read: if it's old by now.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2667,6 +2668,31 @@ class _EventsScreenState extends State<EventsScreen> {
       setState(() => _goalsDueCollapsed = collapsed);
     } catch (_) {
       // Nowhere to keep it: it's open.
+    }
+  }
+
+  /// Whether the day's closed goals were hidden last time. Best effort:
+  /// without it, they're shown.
+  Future<void> _loadClosedGoalsHidden() async {
+    try {
+      final hidden = await SharedPreferencesAsync().getBool(
+        _closedGoalsHiddenKey,
+      );
+      if (!mounted || hidden == null) return;
+      setState(() => _closedGoalsHidden = hidden);
+    } catch (_) {
+      // Nowhere to keep it: they're shown.
+    }
+  }
+
+  void _setClosedGoalsHidden(bool hidden) {
+    setState(() => _closedGoalsHidden = hidden);
+    try {
+      SharedPreferencesAsync()
+          .setBool(_closedGoalsHiddenKey, hidden)
+          .catchError((_) {});
+    } catch (_) {
+      // Nowhere to keep it: it lasts until the app closes.
     }
   }
 
@@ -4378,7 +4404,12 @@ class _EventsScreenState extends State<EventsScreen> {
     // Room made for the commutes too, as they ride with the box.
     final (top, foot) = _withCommutes(span);
     final effect = _overwritesAny
-        ? BoxEffect(_movingOthers(event), start: top, end: foot, lists: _listIds)
+        ? BoxEffect(
+            _movingOthers(event),
+            start: top,
+            end: foot,
+            lists: _listIds,
+          )
         : null;
     final makingRoom = effect?.overwrite ?? const Overwrite();
     final commutes = _commuteCreates(span);
@@ -4633,11 +4664,8 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// What an event from [start] to [end] does to the [others] in its
   /// way, as the lists say ([BoxEffect]).
-  Overwrite _overwrite(
-    OtherEvents others,
-    DateTime start,
-    DateTime end,
-  ) => BoxEffect(others, start: start, end: end, lists: _listIds).overwrite;
+  Overwrite _overwrite(OtherEvents others, DateTime start, DateTime end) =>
+      BoxEffect(others, start: start, end: end, lists: _listIds).overwrite;
 
   /// How near, on screen, a dragged cursor has to come to an edge or a
   /// note to stop there.
@@ -7276,6 +7304,8 @@ class _EventsScreenState extends State<EventsScreen> {
           spent: _compactedGoalTime(goals),
           collapsed: _goalsDueCollapsed,
           onCollapsed: _setGoalsDueCollapsed,
+          closedHidden: _closedGoalsHidden,
+          onClosedHidden: _setClosedGoalsHidden,
           onTap: GoalsScope.of(context) == null ? null : _openGoal,
           onOverdueAction: GoalsScope.of(context) == null
               ? null
@@ -7908,6 +7938,7 @@ const _reviewSeenKey = 'proposal_review_seen';
 const _summaryCollapsedKey = 'day_summary_collapsed';
 const _allDayCollapsedKey = 'google_all_day_collapsed';
 const _goalsDueCollapsedKey = 'goals_due_collapsed';
+const _closedGoalsHiddenKey = 'goals_closed_hidden';
 const _weatherCollapsedKey = 'weather_strip_collapsed';
 const _googleOnTopKey = 'google_on_top';
 
