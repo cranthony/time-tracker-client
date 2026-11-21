@@ -1,4 +1,5 @@
 import 'goal.dart';
+import 'goal_queue.dart';
 import 'proposal.dart' show ProposalGoalChange;
 
 /// One goal's part of a change to several: made, changed or deleted.
@@ -130,7 +131,17 @@ List<Goal> applied(
           ..clear()
           ..addAll(followed);
       case GoalDelete(:final id):
-        out.removeWhere((g) => g.id == id);
+        // What waited for it waits for what it waited for, as the server
+        // splices it.
+        final spliced = applied(
+          out,
+          leavingQueue(out, id, start: false),
+          now: now,
+        );
+        out
+          ..clear()
+          ..addAll(spliced)
+          ..removeWhere((g) => g.id == id);
       case GoalBatch(changes: final several):
         final after = applied(out, several, now: now);
         out

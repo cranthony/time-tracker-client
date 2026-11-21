@@ -7,6 +7,7 @@ import '../models/event.dart';
 import '../models/goal.dart';
 import '../models/goal_activation.dart';
 import '../models/goal_changes.dart';
+import '../models/goal_queue.dart';
 import '../services/goal_drafts.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
@@ -812,9 +813,11 @@ class GoalActions {
       if (asked == null || !context.mounted) return;
       note = asked.note;
     }
-    await save(
-      "Couldn't mark ${goalTitle(goal)} $status",
-      editing(
+    await save("Couldn't mark ${goalTitle(goal)} $status", [
+      // Closed while it's queued, what waited for it closes up behind it
+      // rather than starting.
+      if (goal.inactive) ...leavingQueue(goals, goal.id),
+      ...editing(
         tree,
         goal,
         also,
@@ -823,7 +826,7 @@ class GoalActions {
         made: made,
         note: note,
       ),
-    );
+    ]);
   }
 
   /// Moves [goal] under another goal, or to the top level, or under a new
