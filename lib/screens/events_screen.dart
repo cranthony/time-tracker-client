@@ -19,6 +19,7 @@ import '../models/proposal.dart';
 import '../models/proposed_stories.dart';
 import '../models/recurrence.dart';
 import '../models/trait.dart';
+import '../models/trait_focus.dart';
 import '../models/trait_icon.dart';
 import '../outbox/event_outbox.dart';
 import '../outbox/legacy_writes.dart' show actionWriteFields;
@@ -83,6 +84,7 @@ import '../widgets/proposal_problem_status.dart';
 import '../widgets/proposal_review.dart';
 import '../widgets/proposed_stories_sheet.dart';
 import '../widgets/trait_example_dialog.dart';
+import '../widgets/trait_focus_chip.dart';
 import '../widgets/trait_icon.dart';
 import '../widgets/recurrence_dialog.dart';
 import '../widgets/refreshing_bar.dart';
@@ -2145,6 +2147,33 @@ class _EventsScreenState extends State<EventsScreen> {
       }
     }
     setState(() {});
+  }
+
+  /// The active traits, in order, to pick the one in focus from.
+  List<Trait> get _activeTraits => [
+    for (final t in _memory.traits ?? const <Trait>[])
+      if (t.status == 'active' && t.id != null) t,
+  ];
+
+  /// The trait in focus ([AppSettings.focusTraitId]), if it's active.
+  Trait? get _focusTrait {
+    final id = AppSettings.of(context).focusTraitId;
+    if (id == null) return null;
+    return _activeTraits.where((t) => t.id == id).firstOrNull;
+  }
+
+  /// The trait in focus at the head of the day's summary, with its
+  /// rating of the day's [events]; nothing without traits to pick from.
+  Widget? _focusChip(List<Event> events) {
+    final traits = _activeTraits;
+    if (traits.isEmpty) return null;
+    final focus = _focusTrait;
+    return TraitFocusChip(
+      traits: traits,
+      focus: focus,
+      reading: focus == null ? null : dayTraitReading(focus, events, _day),
+      onFocus: AppSettings.of(context).setFocusTraitId,
+    );
   }
 
   /// The traits [event] marks, to show by their icons: those a judgment
@@ -7272,6 +7301,7 @@ class _EventsScreenState extends State<EventsScreen> {
           onCollapsed: _setSummaryCollapsed,
           durations: _summaryDurations,
           onDurations: _setSummaryDurations,
+          leading: _focusChip(events),
         ),
       if (Weather.of(context) case final weather? when weather.enabled)
         WeatherStrip(
@@ -7710,6 +7740,10 @@ class _EventsScreenState extends State<EventsScreen> {
                 goalNames: _goalNames,
                 goalColors: _goalColors,
                 markedTraits: _markedTraits,
+                focusLean: switch (_focusTrait) {
+                  final focus? => (e) => eventTraitReading(focus, e)?.lean,
+                  null => null,
+                },
                 scale: _scale,
                 now: widget.clock(),
                 lastCompaction: _lastCompaction,

@@ -68,6 +68,7 @@ class TimeSummary extends StatefulWidget {
     this.durations = false,
     this.onDurations,
     this.controls,
+    this.leading,
     this.onPage,
     this.color,
     this.showLabel = 'Show summary',
@@ -82,6 +83,10 @@ class TimeSummary extends StatefulWidget {
 
   /// Shown under the titles while it's open: what the pages measure, say.
   final Widget? controls;
+
+  /// Shown before the titles, and before "Show summary" while it's
+  /// folded away.
+  final Widget? leading;
   final List<Widget> pages;
 
   final int initialPage;
@@ -218,6 +223,7 @@ class _TimeSummaryState extends State<TimeSummary> {
     if (widget.collapsed && onCollapsed != null) {
       return Row(
         children: [
+          ?widget.leading,
           const Spacer(),
           GestureDetector(
             onTap: () => onCollapsed(false),
@@ -239,6 +245,10 @@ class _TimeSummaryState extends State<TimeSummary> {
     }
     return Row(
       children: [
+        if (widget.leading case final leading?) ...[
+          leading,
+          const SizedBox(width: 12),
+        ],
         // Shrunk to fit, if they must, by what's after them.
         Expanded(
           child: Align(
