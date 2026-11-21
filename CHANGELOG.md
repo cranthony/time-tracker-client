@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.279.0
+
+- Queues of goals, groundwork: goals each waiting for the one ahead to
+  close are read as a queue (a tree, where two wait for one), and moving
+  one in a queue, or a whole queue behind another goal, is one change.
+- Marking a goal done, missed or obsolete while it's still queued closes
+  the queue up behind it, rather than starting the goal behind it.
+- A goal deleted that others wait for is spliced out, as the server now
+  does: they wait for what it waited for.
+
 ## 7.278.0
 
 - The goals strip above the timeline can hide the day's closed goals --
