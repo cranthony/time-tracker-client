@@ -6,6 +6,19 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.280.0
+
+- The Goals pane's queue button shows the backlog: each queue of goals
+  waiting one after another, under what starts it (an active goal, one
+  on hold, or a time), in the order they'd start. Each branch has a rail
+  in its first goal's color; a fork names the branches that start
+  together; a goal waiting for two says so.
+- Hold and drag a goal in the backlog to move it: alone, the queue closes
+  up where it was; in front of a queue, it starts and the goal that was
+  active waits behind it. Dragging a queue's front or a branch's first
+  goal brings everything behind it -- put behind another queue's goal, a
+  whole project waits for it.
+
 ## 7.279.0
 
 - Queues of goals, groundwork: goals each waiting for the one ahead to
