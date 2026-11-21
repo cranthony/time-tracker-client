@@ -63,6 +63,11 @@ void main() {
     expect(_queues(queue), ['active: work > a > b > c']);
   });
 
+  test('an active goal with nothing queued behind it is no queue', () {
+    final alone = _goal('alone', status: 'active');
+    expect(_queues([...queue, alone]), ['active: work > a > b > c']);
+  });
+
   test('fronts on hold, waiting for a time, and forks', () {
     final held = _goal('held', held: true);
     final later = _goal(

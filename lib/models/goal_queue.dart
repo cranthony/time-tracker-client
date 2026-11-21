@@ -132,7 +132,9 @@ List<GoalQueue> goalQueues(List<Goal> goals, {required DateTime now}) {
     }
   }
   for (final g in shown.values) {
-    if (g.active && nodes[g.id]!.next.isNotEmpty) fronts.add(nodes[g.id]!);
+    if (g.active && nodes[g.id]?.next.isNotEmpty == true) {
+      fronts.add(nodes[g.id]!);
+    }
   }
   int byStart(QueueNode a, QueueNode b) {
     final byPriority = tree
