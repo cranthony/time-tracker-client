@@ -358,7 +358,8 @@ class PendingEventWrite implements OutboxItem<PendingEventWrite> {
       final (id, fields) = updateFields(u);
       final current = events.where((e) => e.id == id).firstOrNull;
       replace(id, {
-        ...fields,
+        // What the update doesn't set, where the layer had it.
+        ...withCutEdges(proposal.event(id), fields),
         if (current != null &&
             (current.status == ProposalEventStatus.onSchedule ||
                 current.status == ProposalEventStatus.planned))

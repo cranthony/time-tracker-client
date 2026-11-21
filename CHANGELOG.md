@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.277.0
+
+- Dragging only one edge of an event the open proposal's layer had cut
+  keeps the other edge where the layer cut it: extending a Sleep the
+  commute home had cut short no longer sends it back to its planned
+  start, under the commute, where the server refused it. The server
+  keeps such an edge the layer's, so it follows what cut it; the app
+  shows it so while the change waits to save, and in the offline
+  proposal.
+
 ## 7.276.0
 
 - An edit of the open proposal's layer that runs into events the

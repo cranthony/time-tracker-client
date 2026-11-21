@@ -855,7 +855,8 @@ class InMemoryProposalRepository implements ProposalRepository {
       final e = events[i];
       events[i] = edited(
         e,
-        fields: fields,
+        // What the update doesn't set, where the layer had it.
+        fields: withCutEdges(current.event(id), fields),
         status: e.status == ProposalEventStatus.created
             ? ProposalEventStatus.created
             : ProposalEventStatus.adjusted,

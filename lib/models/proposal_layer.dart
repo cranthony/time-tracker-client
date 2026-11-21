@@ -128,6 +128,23 @@ List<ProposalEvent> unimplied(
     if (!(e.splitPiece && e.cut)) _asPlanned(e, through),
 ];
 
+/// [fields], an update of [shown] -- the event as the layer leaves it --
+/// as the server takes them: an edge they don't set stays where the
+/// layer cut it, as the server keeps the edges a user's edit doesn't set
+/// the layer's. Dragging only the end of an event the layer cut keeps the
+/// start it was cut to.
+Map<String, Object?> withCutEdges(
+  ProposalEvent? shown,
+  Map<String, Object?> fields,
+) {
+  if (shown == null || !shown.cut || shown.splitPiece) return fields;
+  return {
+    if (!fields.containsKey('start')) 'start': localIsoTimestamp(shown.start),
+    if (!fields.containsKey('end')) 'end': localIsoTimestamp(shown.end),
+    ...fields,
+  };
+}
+
 /// [e] with what the layer implied of it undone: where the plan had it,
 /// as planned -- on schedule before [through], still to come after.
 ProposalEvent _asPlanned(ProposalEvent e, DateTime through) {
