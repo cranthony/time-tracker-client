@@ -390,6 +390,32 @@ void main() {
       );
     });
 
+    test("an update of an event the layer cut keeps the edges it doesn't "
+        'set where the layer had them, as the server does', () {
+      final layer = implyLayer([
+        event('commute', 22, 24, status: 'adjusted', by: 'claude'),
+        event('sleep', 23, 31),
+        event('work', 9, 12),
+      ], at(30));
+      ProposalEvent of(String id) => layer.firstWhere((e) => e.id == id);
+      expect(of('sleep').cut, isTrue);
+
+      // Its end dragged later: the start stays where the layer cut it.
+      final later = withCutEdges(of('sleep'), {'end': iso(33)});
+      expect(later, {'start': iso(24), 'end': iso(33)});
+      // Renamed: both edges kept.
+      expect(withCutEdges(of('sleep'), {'summary': 'Nap'}), {
+        'start': iso(24),
+        'end': iso(31),
+        'summary': 'Nap',
+      });
+      // What it sets wins.
+      expect(withCutEdges(of('sleep'), {'start': iso(25)})['start'], iso(25));
+      // One the layer didn't cut is left to the plan.
+      expect(withCutEdges(of('work'), {'end': iso(13)}), {'end': iso(13)});
+      expect(withCutEdges(null, {'end': iso(13)}), {'end': iso(13)});
+    });
+
     test('follow-through answers go in amend_proposal on their own, and '
         'are kept as they wait', () {
       const edits = ProposalEdits(
