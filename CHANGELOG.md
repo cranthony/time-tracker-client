@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.283.0
+
+- Traits keep techniques: your own ways of developing each, in order.
+  A trait's page lists them numbered under its definition, and the trait
+  editor adds, moves up and removes them. Saved only when changed, so a
+  server from before them still saves the rest.
+
 ## 7.282.0
 
 - A goal's Starts field has "In a queue…": it lists each queue in the

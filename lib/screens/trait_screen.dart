@@ -14,7 +14,8 @@ import '../widgets/trait_icon.dart';
 import '../widgets/trait_stories.dart';
 import 'trait_breakdown.dart';
 
-/// A trait on one page, to read: its definition and status, each of its
+/// A trait on one page, to read: its definition, status and techniques
+/// (the user's ways of developing it, numbered), each of its
 /// parts -- a judgment's rubric, rating scale and the facts it's judged
 /// from -- and below them its overall health: the last day's score, the
 /// mean of everyone scored by it, and its recent trend (tapping it shows
@@ -164,6 +165,28 @@ class _TraitScreenState extends State<TraitScreen> {
             ),
           for (final problem in _trait.problems)
             Text(problem, style: TextStyle(color: theme.colorScheme.error)),
+          if (_trait.techniques.isNotEmpty) ...[
+            _heading(theme, 'Techniques'),
+            for (final (i, technique) in _trait.techniques.indexed)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      child: Text(
+                        '${i + 1}.',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(technique, style: theme.textTheme.bodyMedium),
+                    ),
+                  ],
+                ),
+              ),
+          ],
           if (_trait.facts.isNotEmpty) ...[
             _heading(theme, 'Facts'),
             Padding(

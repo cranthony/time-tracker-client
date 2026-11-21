@@ -10,8 +10,8 @@ import 'parts_editor.dart';
 import 'scoring_editor.dart';
 
 /// Creates a trait (with no [trait]) or edits one, on a page of its own
-/// ([EditPage]) -- its name, definition, status, facts, parts and how
-/// they combine -- checking it as the server does ([traitProblem]),
+/// ([EditPage]) -- its name, definition, status, techniques, facts,
+/// parts and how they combine -- checking it as the server does ([traitProblem]),
 /// then saving it with [save], which gets it whole. Returns what [save]
 /// returned, or null if it was called off. [actions] names the actions
 /// a cadence part can count, by id. With [preview], its parts are scored
@@ -51,6 +51,12 @@ class _TraitEditorState extends State<_TraitEditor> {
   );
   late String _status = widget.trait?.status ?? 'active';
 
+  /// Its techniques, a field each, in order; blank ones aren't saved.
+  late final List<TextEditingController> _techniques = [
+    for (final t in widget.trait?.techniques ?? const <String>[])
+      TextEditingController(text: t),
+  ];
+
   late List<Part> _parts = [...?widget.trait?.parts];
 
   /// What it keeps about each person, for its judgments.
@@ -86,6 +92,9 @@ class _TraitEditorState extends State<_TraitEditor> {
   void dispose() {
     _name.dispose();
     _definition.dispose();
+    for (final t in _techniques) {
+      t.dispose();
+    }
     super.dispose();
   }
 
@@ -96,9 +105,24 @@ class _TraitEditorState extends State<_TraitEditor> {
     definition: _definition.text.trim().isEmpty
         ? null
         : _definition.text.trim(),
+    techniques: [
+      for (final t in _techniques)
+        if (t.text.trim().isNotEmpty) t.text.trim(),
+    ],
     parts: _parts,
     scoring: _kept,
     facts: _facts,
+  );
+
+  void _addTechnique() =>
+      setState(() => _techniques.add(TextEditingController()));
+
+  void _removeTechnique(int index) =>
+      setState(() => _techniques.removeAt(index).dispose());
+
+  /// Moves the technique at [index] up one.
+  void _raiseTechnique(int index) => setState(
+    () => _techniques.insert(index - 1, _techniques.removeAt(index)),
   );
 
   /// Adds a fact (with no [index]) or edits the one at [index].
@@ -226,6 +250,63 @@ class _TraitEditorState extends State<_TraitEditor> {
             'archived' => 'Retired: not rated. Its history is kept.',
             _ => 'Rated for everyone, Self included.',
           }, style: theme.textTheme.bodySmall),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 16, bottom: 4),
+          child: Text('Techniques', style: theme.textTheme.titleSmall),
+        ),
+        Text(
+          'Your own ways of developing it, in order: what to remember when '
+          "it's at stake.",
+          style: theme.textTheme.bodySmall,
+        ),
+        for (final (i, technique) in _techniques.indexed)
+          Padding(
+            key: ObjectKey(technique),
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: technique,
+                    autofocus: technique.text.isEmpty,
+                    minLines: 1,
+                    maxLines: null,
+                    maxLength: 2000,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Technique ${i + 1}',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      counterText: '',
+                    ),
+                  ),
+                ),
+                if (i > 0)
+                  IconButton(
+                    tooltip: 'Move technique ${i + 1} up',
+                    icon: const Icon(Icons.arrow_upward),
+                    onPressed: () => _raiseTechnique(i),
+                  ),
+                IconButton(
+                  tooltip: 'Remove technique ${i + 1}',
+                  icon: const Icon(Icons.close),
+                  onPressed: () => _removeTechnique(i),
+                ),
+              ],
+            ),
+          ),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FieldHotkey(
+            'T',
+            child: TextButton.icon(
+              onPressed: _addTechnique,
+              icon: const Icon(Icons.add),
+              label: const Text('Add technique'),
+            ),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.only(top: 16, bottom: 4),
