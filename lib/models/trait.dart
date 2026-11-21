@@ -13,6 +13,7 @@ class Trait {
     required this.name,
     this.status = 'active',
     this.definition,
+    this.techniques = const [],
     this.parts = const [],
     this.scoring,
     this.facts = const [],
@@ -27,6 +28,10 @@ class Trait {
   /// One of [traitStatuses]' keys.
   final String status;
   final String? definition;
+
+  /// The user's own ways of developing it, in order, each plain text
+  /// ("Name the feeling I'm avoiding"); none from a server before them.
+  final List<String> techniques;
   final List<Part> parts;
 
   /// How its parts' scores combine, their weights by part id; null for
@@ -54,6 +59,10 @@ class Trait {
     name: json['name'] as String? ?? '',
     status: json['status'] as String? ?? 'active',
     definition: json['definition'] as String?,
+    techniques: [
+      for (final t in json['techniques'] as List? ?? const [])
+        if (t is String && t.trim().isNotEmpty) t,
+    ],
     parts: [
       for (final part in json['parts'] as List? ?? const [])
         if (part is Map) Map<String, Object?>.unmodifiable(part.cast()),
@@ -76,6 +85,7 @@ class Trait {
     'name': name,
     'status': status,
     'definition': ?definition,
+    if (techniques.isNotEmpty) 'techniques': techniques,
     'parts': parts,
     'scoring': ?scoring?.toJson(),
     'facts': [for (final fact in facts) fact.toJson()],

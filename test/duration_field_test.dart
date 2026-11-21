@@ -143,6 +143,10 @@ void main() {
 
   testWidgets("a trait is edited on a page, Time spent's target in hours "
       'and minutes', (tester) async {
+    // Tall enough for the whole page: a list builds only what's in view.
+    tester.view.physicalSize = const Size(900, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     Trait? saved;
     await tester.pumpWidget(
       MaterialApp(

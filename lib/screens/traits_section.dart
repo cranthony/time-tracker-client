@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 
 import '../models/person.dart';
@@ -220,6 +221,11 @@ class TraitsSectionState extends State<TraitsSection> {
               'name': edited.name,
               'status': edited.status,
               'definition': edited.definition,
+              // Only when changed, so a server before them saves the rest.
+              if (!listEquals(edited.techniques, trait.techniques))
+                'techniques': edited.techniques.isEmpty
+                    ? null
+                    : edited.techniques,
               'parts': edited.parts,
               'scoring': edited.scoring?.toJson(),
               'facts': [for (final fact in edited.facts) fact.toJson()],
