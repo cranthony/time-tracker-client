@@ -81,6 +81,32 @@ class AppSettings extends ChangeNotifier {
   /// What the weather's rain and snow are measured in.
   PrecipitationUnit get precipitationUnit => _precipitationUnit;
 
+  static const _focusTraitKey = 'settings_focus_trait';
+  String? _focusTraitId;
+
+  /// The id of the trait in focus on the timeline: its rating of the day
+  /// shown in the day's summary, and of each event beside it. Null for
+  /// none.
+  String? get focusTraitId => _focusTraitId;
+
+  /// Puts the trait [id] in focus, or none, and keeps it.
+  Future<void> setFocusTraitId(String? id) async {
+    if (id == _focusTraitId) return;
+    _focusTraitId = id;
+    notifyListeners();
+    if (!persist) return;
+    try {
+      final prefs = SharedPreferencesAsync();
+      if (id == null) {
+        await prefs.remove(_focusTraitKey);
+      } else {
+        await prefs.setString(_focusTraitKey, id);
+      }
+    } catch (_) {
+      // Kept while the app runs, then.
+    }
+  }
+
   /// Sets the [temperatureUnit], and keeps it.
   Future<void> setTemperatureUnit(TemperatureUnit unit) =>
       _setString(_temperatureUnitKey, unit.name, () => _temperatureUnit = unit);
@@ -280,6 +306,7 @@ class AppSettings extends ChangeNotifier {
             _precipitationUnitKey,
           )] ??
           _precipitationUnit;
+      _focusTraitId = await prefs.getString(_focusTraitKey);
       if (await prefs.getString(_keepRulesKey) case final json?) {
         _keepRules = [
           for (final r in jsonDecode(json) as List) ?KeepRule.fromJson(r),

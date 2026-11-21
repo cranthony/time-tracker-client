@@ -6,6 +6,23 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.281.0
+
+- Pick a trait to focus on from the head of the day's summary on the
+  Events page: the summary shows its icon and its rating of the day, and
+  a thin bar between the weather band and the events shows how it rated
+  each event -- red below neutral, grey at it, green above it. The pick
+  is kept on this device.
+  - The day's rating is the trait's rating of that day's events: each
+    judgment part's combined as its scoring says (by event or by time),
+    the parts as the trait's scoring says. An event with several people
+    counts as their mean.
+  - Traits without judgments (counts, continuity, follow-through...) rate
+    no single event, so show no bars.
+- A judgment part can mark one of its ratings as neutral -- the one that
+  says nothing either way, such as "nothing came up" -- in the trait
+  editor. Without one, the middle of its scale is neutral.
+
 ## 7.280.0
 
 - The Goals pane's queue button shows the backlog: each queue of goals

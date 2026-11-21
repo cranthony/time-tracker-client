@@ -142,7 +142,8 @@ List<SummarySlice> goalShares(
 /// actions, for the top-level goals, and for each priority, in that
 /// order, and the time with nothing scheduled. Swiping it, or tapping a
 /// title, turns between them, its chevron folds it away, and the button
-/// by that turns its percentages into durations and back.
+/// by that turns its percentages into durations and back. Its [leading]
+/// widget heads it.
 class DaySummary extends StatelessWidget {
   const DaySummary({
     super.key,
@@ -155,9 +156,13 @@ class DaySummary extends StatelessWidget {
     this.onCollapsed,
     this.durations = false,
     this.onDurations,
+    this.leading,
   });
 
   final List<Event> events;
+
+  /// Shown at its head, open or folded away: the trait in focus, say.
+  final Widget? leading;
   final DateTime day;
   final Map<String, PlanAction> actions;
 
@@ -183,6 +188,7 @@ class DaySummary extends StatelessWidget {
     onCollapsed: onCollapsed,
     durations: durations,
     onDurations: onDurations,
+    leading: leading,
     pages: [
       for (final slices in [
         actionShares(events, day, actions),

@@ -18,6 +18,7 @@ import '../models/weather.dart';
 import 'color_picker.dart';
 import 'durations.dart';
 import 'other_events.dart';
+import 'trait_focus_style.dart';
 import 'trait_icon.dart';
 import 'weather_style.dart';
 
@@ -61,6 +62,10 @@ const _cancelledAlpha = 0.4;
 
 /// The colored strip down an event's left edge.
 const _stripWidth = 4.0;
+
+/// How far the trait in focus's bar keeps from the band either side of
+/// it, in the gap between them.
+const _focusInset = 0.5;
 
 /// How thick the hairline is between events that meet in one color.
 const _seamWidth = 1.0;
@@ -479,7 +484,9 @@ List<T> placeLabels<T>(
 /// [temperatureLabel], the temperature is on it too: every third hour
 /// where the forecast is by the hour -- counted from [temperaturesFrom]
 /// -- once in each part of a day where it's coarser, just below the chance of rain where that's labeled at
-/// the same time. Beside that, a band as wide of the events, each where its
+/// the same time. Given a trait in focus ([focusLean]), a thin bar beside
+/// it for each event the trait rates, red to grey to green. Beside that,
+/// a band as wide of the events, each where its
 /// times put it, in its [eventColor]. Then each event: its summary, then
 /// a line for each of its actions, the primary action first, each after a
 /// diamond in the action's color ([actions] gives them; one not among them
@@ -572,9 +579,16 @@ class DayTimeline extends StatelessWidget {
     this.temperatures,
     this.circadian = const [],
     this.markedTraits,
+    this.focusLean,
   });
 
   final List<Event> events;
+
+  /// How the trait in focus rates [event] (see [TraitReading.lean]),
+  /// drawn as a thin bar between the band and the events, where its
+  /// times put it, in [traitLeanColor]; null where it's unrated. Null for
+  /// no trait in focus.
+  final double? Function(Event event)? focusLean;
 
   /// The traits [event] marks, each shown by its icon after its summary
   /// where there's room ([markedTraits] in models/trait_icon.dart); null
@@ -869,6 +883,13 @@ class DayTimeline extends StatelessWidget {
       sun: weather == null ? const [] : sun,
       sunColor: sunColor(theme.brightness),
       placements: placements,
+      focusColors: [
+        for (final p in placements)
+          if (focusLean?.call(p.event) case final lean?)
+            traitLeanColor(lean)
+          else
+            null,
+      ],
       timeLabel: (t) =>
           MaterialLocalizations.of(context)
               .formatTimeOfDay(TimeOfDay.fromDateTime(t.toLocal())),
@@ -1421,7 +1442,8 @@ List<Widget> _googleMarks(
           height: 2,
           child: IgnorePointer(
             child: Semantics(
-              label: 'The layer runs on past through, to the end of the '
+              label:
+                  'The layer runs on past through, to the end of the '
                   'event going on then',
               child: ColoredBox(color: colors.line),
             ),
@@ -3548,6 +3570,7 @@ class _RailPainter extends CustomPainter {
     required this.sun,
     required this.sunColor,
     required this.placements,
+    this.focusColors = const [],
     required this.timeLabel,
     required this.scaler,
     required this.baseStyle,
@@ -3582,6 +3605,10 @@ class _RailPainter extends CustomPainter {
   final List<SunTime> sun;
   final Color sunColor;
   final List<TimelinePlacement> placements;
+
+  /// The color of each of the [placements]' bar for the trait in focus,
+  /// in their order; null for none.
+  final List<Color?> focusColors;
   final String Function(DateTime) timeLabel;
   final TextScaler scaler;
 
@@ -3653,6 +3680,7 @@ class _RailPainter extends CustomPainter {
     _paintTimeLabels(canvas, _labels.placed);
     _paintSun(canvas);
     _paintEventBand(canvas);
+    _paintFocus(canvas);
     if (compactionY case final y?) {
       final paint = Paint()
         ..color = compactionColor
@@ -4100,6 +4128,24 @@ class _RailPainter extends CustomPainter {
     }
   }
 
+  /// The trait in focus's bar for each event it rates, where its times
+  /// put it, in the gap between the band and the events' band. Later
+  /// events are drawn over earlier ones they overlap.
+  void _paintFocus(Canvas canvas) {
+    const left = _timeWidth + _bandWidth - _bandPadding + _focusInset;
+    const right = _eventBandLeft - _focusInset;
+    for (final (i, p) in placements.indexed) {
+      if (i >= focusColors.length) break;
+      final color = focusColors[i];
+      if (color == null) continue;
+      final bottom = math.max(p.trueBottom, p.trueTop + 1);
+      canvas.drawRect(
+        Rect.fromLTRB(left, p.trueTop, right, bottom),
+        Paint()..color = color,
+      );
+    }
+  }
+
   @override
   bool shouldRepaint(_RailPainter old) =>
       old.scale != scale ||
@@ -4109,6 +4155,7 @@ class _RailPainter extends CustomPainter {
       old.goalColors != goalColors ||
       !listEquals(old.weather, weather) ||
       !listEquals(old.sun, sun) ||
+      !listEquals(old.focusColors, focusColors) ||
       old.sunColor != sunColor ||
       old.edgeColor != edgeColor ||
       old.coverColor != coverColor ||

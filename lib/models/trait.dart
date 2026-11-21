@@ -615,6 +615,10 @@ String? partProblem(Part part, {List<String>? factIds}) {
     if (ratings.any((r) => r.label.trim().isEmpty)) {
       return 'say what each rating means.';
     }
+    if (part['neutral'] case final neutral?
+        when !ratings.any((r) => r.score == neutral)) {
+      return 'its neutral rating must be one of its ratings.';
+    }
     final facts = part['facts'] as List? ?? const [];
     if (facts.isEmpty) return 'pick at least one fact to judge by.';
     final names = judgmentFactsOf(part);

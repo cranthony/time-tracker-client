@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
+import 'package:time_tracker_client/widgets/trait_focus_chip.dart';
 import 'package:time_tracker_client/widgets/sign_in_off_banner.dart';
 import 'package:time_tracker_client/services/actions_repository.dart';
 import 'package:time_tracker_client/outbox/action_writes.dart';
@@ -73,6 +74,7 @@ void main() {
       bool remembers = false,
       EndMode? endMode,
       bool signInOff = false,
+      String? focusTrait,
     }) async {
       tester.view.physicalSize = _phone * 2;
       tester.view.devicePixelRatio = 2;
@@ -82,6 +84,7 @@ void main() {
       debugDisableShadows = false;
       final settings = AppSettings(persist: false);
       if (endMode != null) settings.setEndMode(endMode);
+      if (focusTrait != null) settings.setFocusTraitId(focusTrait);
       try {
         final app = MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -745,6 +748,36 @@ void main() {
             await tester.pumpAndSettle();
             if (open) {
               await tester.tap(find.text('Cook dumplings').first);
+              await tester.pumpAndSettle();
+            }
+          },
+        );
+      });
+    }
+
+    // A trait in focus: its icon and rating of the day at the head of
+    // the summary, and a bar beside each event it rated, red to grey to
+    // green; then the menu to pick another.
+    for (final (name, menu) in [
+      ('events_trait_focus', false),
+      ('events_trait_focus_menu', true),
+    ]) {
+      testWidgets('$name ($mode)', (tester) async {
+        await render(
+          tester,
+          name,
+          events(),
+          scoped: true,
+          focusTrait: 'present',
+          then: () async {
+            for (var i = 0; i < 4; i++) {
+              await tester.tap(find.byTooltip('Previous day'));
+              await tester.pumpAndSettle();
+            }
+            await tester.ensureVisible(find.text('Cook dumplings').first);
+            await tester.pumpAndSettle();
+            if (menu) {
+              await tester.tap(find.byType(TraitFocusChip));
               await tester.pumpAndSettle();
             }
           },

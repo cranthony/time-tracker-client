@@ -419,16 +419,40 @@ class _PartsEditorState extends State<PartsEditor> {
               ),
             ),
             IconButton(
+              tooltip: draft.neutral == rating
+                  ? 'Neutral: says nothing either way'
+                  : 'Make it neutral: says nothing either way',
+              isSelected: draft.neutral == rating,
+              icon: const Icon(Icons.radio_button_unchecked),
+              selectedIcon: const Icon(Icons.radio_button_checked),
+              onPressed: () {
+                draft.neutral = draft.neutral == rating ? null : rating;
+                _changed();
+              },
+            ),
+            IconButton(
               tooltip: 'Remove rating ${rating.score.text}',
               icon: const Icon(Icons.close),
               onPressed: () {
-                draft.ratings.removeAt(i).dispose();
+                final removed = draft.ratings.removeAt(i);
+                if (draft.neutral == removed) draft.neutral = null;
+                removed.dispose();
                 _changed();
               },
             ),
           ],
         ),
       ),
+    Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text(
+        'Mark the rating that says nothing either way ("nothing came up") '
+        'as neutral: the timeline shows it in grey, those below it in red '
+        'and those above it in green. Without one, the middle of the scale '
+        'is neutral.',
+        style: theme.textTheme.bodySmall,
+      ),
+    ),
     Align(
       alignment: AlignmentDirectional.centerStart,
       child: TextButton.icon(
@@ -814,6 +838,11 @@ class _PartDraft {
     ratings.addAll([
       for (final r in judgmentRatings(judgment)) _RatingDraft(r.score, r.label),
     ]);
+    if (judgment['neutral'] case final num n) {
+      neutral = ratings
+          .where((r) => int.tryParse(r.score.text) == n)
+          .firstOrNull;
+    }
     for (final MapEntry(:key, :value) in judgmentFactsOf(judgment).entries) {
       facts[key] = value == null ? null : TextEditingController(text: '$value');
     }
@@ -847,6 +876,9 @@ class _PartDraft {
   var fades = false;
   final fade = TextEditingController();
   final ratings = <_RatingDraft>[];
+
+  /// A judgment's rating that says nothing either way, if it has one.
+  _RatingDraft? neutral;
 
   /// A spacing part's exceptions.
   final exceptions = <_ExceptionDraft>[];
@@ -903,6 +935,9 @@ class _PartDraft {
       if (kind == 'judgment') ...{
         ...judgmentKept,
         'scoring': ?scoring.json,
+        if (neutral case final n? when ratings.contains(n))
+          // One that doesn't parse is kept as typed, for partProblem.
+          'neutral': int.tryParse(n.score.text.trim()) ?? n.score.text.trim(),
         // Two sharing a score can't be a map: partProblem says so.
         'ratings': scores.toSet().length == scores.length
             ? {
