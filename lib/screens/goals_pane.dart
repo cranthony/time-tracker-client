@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/goal.dart';
 import '../services/goals_repository.dart';
 import '../services/plan_memory.dart';
+import '../widgets/goal_backlog.dart';
 import '../widgets/goal_flows.dart';
 import '../widgets/goal_reorder_list.dart';
 import '../widgets/goal_tile.dart';
@@ -21,7 +22,9 @@ import 'goal_screen.dart';
 /// above it, whatever their status. "+" adds a top-level goal, on its
 /// full page; the round
 /// "+" in the corner, given [onQuickAdd], the quick New goal sheet the
-/// home screen widget opens. Above it all, with a
+/// home screen widget opens. The queue button shows the backlog
+/// instead: the goals queued to start one after another ([GoalBacklog]),
+/// dragged to reorder them. Above it all, with a
 /// [summary] to measure, the time in its window by top-level goal. It
 /// shows what [memory] has, while it loads afresh.
 class GoalsPane extends StatefulWidget {
@@ -49,6 +52,9 @@ class GoalsPane extends StatefulWidget {
 class GoalsPaneState extends State<GoalsPane> {
   var _statuses = const {'inactive', 'active'};
   var _query = '';
+
+  /// Whether the backlog's shown in place of the tree.
+  var _backlog = false;
 
   /// Whether they've been asked for, this visit, and couldn't be had.
   bool _failed = false;
@@ -123,10 +129,17 @@ class GoalsPaneState extends State<GoalsPane> {
               pages: (events) => [goalTime(events, view.window, goals)],
             ),
       actions: [
-        GoalStatusFilter(
-          statuses: _statuses,
-          onChanged: (picked) => setState(() => _statuses = picked),
+        IconButton(
+          tooltip: _backlog ? 'Show all goals' : 'Show the backlog',
+          isSelected: _backlog,
+          icon: const Icon(Icons.low_priority),
+          onPressed: () => setState(() => _backlog = !_backlog),
         ),
+        if (!_backlog)
+          GoalStatusFilter(
+            statuses: _statuses,
+            onChanged: (picked) => setState(() => _statuses = picked),
+          ),
         NewHotkey(
           child: IconButton(
             tooltip: 'New goal',
@@ -154,6 +167,23 @@ class GoalsPaneState extends State<GoalsPane> {
                   'goals under it for its pieces.',
                 ),
               ],
+            ),
+            _ when _backlog => GoalBacklog(
+              goals: goals!,
+              padding: widget.onQuickAdd == null
+                  ? null
+                  : const EdgeInsets.only(bottom: 88),
+              onMove: _actions.requeue,
+              tile: (goal) => GoalTile(
+                goal: goal,
+                depth: 0,
+                spent: spent[goal.id],
+                subGoals: tree.childrenOf(goal.id).length,
+                priority: tree.priorityOf(goal.id),
+                tree: tree,
+                onTap: () => _open(goal),
+                onEdit: () => _actions.edit(goal),
+              ),
             ),
             _ => GoalReorderList(
               goals: shown,

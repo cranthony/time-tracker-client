@@ -409,6 +409,17 @@ class GoalActions {
     }
   }
 
+  /// Saves [changes], a goal moved in the backlog ([GoalBacklog]): shown
+  /// at once, so it stays where it's dropped, and put back if they can't
+  /// be saved.
+  Future<void> requeue(List<GoalChange> changes) async {
+    final before = goals;
+    memory.showGoals(applied(before, changes, now: now()));
+    if (!await save("Couldn't move the goal in its queue", changes)) {
+      memory.showGoals(before);
+    }
+  }
+
   /// Adds a goal under [parent] (the top level, if null), starting with
   /// [title], [deadline], [description] (written in [descriptionFormat])
   /// and [priority], and the
