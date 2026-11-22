@@ -6,6 +6,16 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.284.0
+
+- An event the open proposal decided -- Claude's change or your own
+  edit -- can't be moved to start after where the proposal ends, by a
+  drag or in its dialog. That moved it onto the calendar and dropped what
+  had been decided of it: Claude's new name, notes and times, and your
+  edits. It's refused, saying so, and stays where it was; move it within
+  what happened, or once that's confirmed. Events the proposal didn't
+  decide still move onto the calendar as before.
+
 ## 7.283.1
 
 - A goal change of your own in a proposal, once changed, can be settled
