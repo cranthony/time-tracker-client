@@ -2538,9 +2538,9 @@ void main() {
         });
       });
 
-      testWidgets("moved out of the layer -- to start at or after its "
-          "through -- it's the calendar's, and what the layer decided of it "
-          'is put back as planned', (tester) async {
+      testWidgets("one the layer decided isn't moved out of it -- to start "
+          "at or after its through -- as that would drop what's decided of "
+          'it: the box stays up', (tester) async {
         await open(tester);
         await toBand(tester);
         await tester.longPress(find.text('Tea'));
@@ -2550,13 +2550,32 @@ void main() {
         await tester.tap(find.byTooltip('Move it here'));
         await tester.pumpAndSettle();
 
+        expect(find.text("Couldn't move it"), findsOneWidget);
         expect(
-          (await onCalendar('tea')).start.isAtSameMomentAs(at(12)),
+          find.textContaining('“Tea” is in what happened, to confirm'),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsNothing);
+        expect((await onCalendar('tea')).start.isAtSameMomentAs(at(9)), isTrue);
+        expect(proposals.amends, isEmpty);
+      });
+
+      testWidgets("moved out of the layer, one it didn't decide is the "
+          "calendar's", (tester) async {
+        await open(tester);
+        await toBand(tester);
+        await tester.longPress(find.text('Work'));
+        await tester.pumpAndSettle();
+        // From 10 to noon: its through.
+        await dragBox(tester, const Duration(hours: 2));
+        await tester.tap(find.byTooltip('Move it here'));
+        await tester.pumpAndSettle();
+
+        expect(
+          (await onCalendar('work')).start.isAtSameMomentAs(at(12)),
           isTrue,
         );
-        expect(proposals.amends.single.toJson(), {
-          'as_planned': ['tea'],
-        });
+        expect(proposals.amends, isEmpty);
       });
 
       /// [proposalJson] with the layer running past its through: a new

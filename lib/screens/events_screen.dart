@@ -1803,19 +1803,32 @@ class _EventsScreenState extends State<EventsScreen> {
 
   /// [changes] to [event] that take it out of the open proposal's layer:
   /// both its times, as shown, if its times change -- the layer's say on
-  /// it goes. Refused for one the layer makes, which the calendar hasn't.
+  /// it goes. Refused for one the layer makes, which the calendar hasn't,
+  /// and for one it decided that's in it -- starting before `through` --
+  /// moved to start after: that would drop what was decided of it, Claude's
+  /// and the user's own. It's moved in what happened, or once that's
+  /// confirmed.
   Map<String, Object?> _outOfLayer(Event event, Map<String, Object?> changes) {
     final decided = _decidedOf(event);
     if (decided == null) return changes;
+    final through = _editedProposal!.through;
     if (decided.status == ProposalEventStatus.created) {
       throw ProposalEditException(
         '${_named(event)} is new in what happened, so it starts before '
-        "${_timeOf(_editedProposal!.through)}. Drop it there, and add it "
+        "${_timeOf(through)}. Drop it there, and add it "
         'to the calendar instead.',
       );
     }
     if (!changes.containsKey('start') && !changes.containsKey('end')) {
       return changes;
+    }
+    if (decided.start.isBefore(through)) {
+      throw ProposalEditException(
+        '${_named(event)} is in what happened, to confirm, so it starts '
+        'before ${_timeOf(through)}. Move it there, or once what happened '
+        "is confirmed -- moving it past ${_timeOf(through)} would drop "
+        "what's been decided of it.",
+      );
     }
     return {
       'start': localIsoTimestamp(event.start),
@@ -4430,6 +4443,15 @@ class _EventsScreenState extends State<EventsScreen> {
       return _endBox();
     }
     final layer = _inLayer(start);
+    // Out of the layer, refused before anything's asked if it's one the
+    // layer decided (see _outOfLayer): the box stays up, as it was.
+    if (!layer) {
+      try {
+        _outOfLayer(event, {'start': localIsoTimestamp(start)});
+      } on ProposalEditException catch (e) {
+        return showErrorSheet(context, title: "Couldn't move it", error: e);
+      }
+    }
     // Room made for the commutes too, as they ride with the box.
     final (top, foot) = _withCommutes(span);
     final effect = _overwritesAny
@@ -4532,7 +4554,8 @@ class _EventsScreenState extends State<EventsScreen> {
               ? "It's under what happened, to confirm"
               : "Couldn't move it",
           error: e,
-          onRetry: under ? null : _finishMoving,
+          // Refused here, as it would be again.
+          onRetry: under || e is ProposalEditException ? null : _finishMoving,
         );
       }
       return;
