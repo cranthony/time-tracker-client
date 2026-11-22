@@ -1826,9 +1826,9 @@ Future<GoalChangeChoice?> showGoalChangeSheet(
     final muted = theme.textTheme.bodySmall?.copyWith(
       color: theme.colorScheme.onSurfaceVariant,
     );
-    final pending =
-        settled == null ||
-        (settled.use == GoalChangeUse.change && claudes != null);
+    // Changed -- Claude's or one of the user's own -- it can still be
+    // settled otherwise: dated again, applied or dropped.
+    final pending = settled == null || settled.use == GoalChangeUse.change;
     final proposes =
         'Proposed: ${goalChangeLabel(context, change.status, change.retryDeadline, change.retryFit)}'
         '${switch (change.at) {
@@ -1904,14 +1904,15 @@ Future<GoalChangeChoice?> showGoalChangeSheet(
               subtitle: const Text('Leave the goal alone'),
               onTap: () => Navigator.of(context).pop(const DropGoalChange()),
             ),
-            if (settled != null)
+            // One of the user's own has nothing of Claude's to go back to.
+            if (settled != null && claudes != null)
               ListTile(
                 leading: const Icon(Icons.undo),
                 title: const Text('Put it back as Claude proposed it'),
                 subtitle: Text(
                   goalChangeLabel(
                     context,
-                    claudes!.status,
+                    claudes.status,
                     claudes.retryDeadline,
                   ),
                 ),

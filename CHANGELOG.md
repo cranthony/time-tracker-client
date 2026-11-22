@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.283.1
+
+- A goal change of your own in a proposal, once changed, can be settled
+  again: dated again with "Missed, try again by…", marked otherwise,
+  applied now or dropped. Its sheet offered only "Ask Claude about it".
+
 ## 7.283.0
 
 - Traits keep techniques: your own ways of developing each, in order.

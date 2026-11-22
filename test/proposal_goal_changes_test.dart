@@ -444,6 +444,64 @@ void main() {
       );
     });
 
+    testWidgets("one of the user's own, changed, can still be dated again "
+        'or dropped -- with nothing of Claude\'s to put back', (tester) async {
+      // The user's own change: the kitchen missed, tried again by a day
+      // that's gone by.
+      await open(
+        tester,
+        extra: {
+          'goal_changes': [
+            {
+              'goal_id': 'kitchen',
+              'title': 'Kitchen',
+              'path': <String>[],
+              'status': 'missed',
+              'retry_deadline': '2026-09-29',
+              'decided_by': 'user',
+            },
+          ],
+          'settled_goal_changes': [
+            {
+              'goal_id': 'kitchen',
+              'use': 'change',
+              'status': 'missed',
+              'retry_deadline': '2026-09-29',
+            },
+          ],
+        },
+      );
+      await tester.tap(find.textContaining(RegExp(r'^Goals \(')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Changed · you'), findsOneWidget);
+
+      await settle(tester, 'Missed, try again by…');
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      expect(lastSent(), {
+        'goal_changes': [
+          {
+            'goal_id': 'kitchen',
+            'use': 'change',
+            'status': 'missed',
+            'retry_deadline': '2026-10-01',
+          },
+        ],
+      });
+
+      await tester.tap(find.byTooltip('Change how it’s settled'));
+      await tester.pumpAndSettle();
+      expect(find.text('Apply it now'), findsOneWidget);
+      expect(find.text('Put it back as Claude proposed it'), findsNothing);
+      await tester.tap(find.text('Drop it'));
+      await tester.pumpAndSettle();
+      expect(lastSent(), {
+        'goal_changes': [
+          {'goal_id': 'kitchen', 'use': 'drop'},
+        ],
+      });
+    });
+
     testWidgets('the goals due strip shows the goal changes still to be '
         'made as made, as the events are -- not where they\'re kept', (
       tester,
