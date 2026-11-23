@@ -6,6 +6,21 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.285.0
+
+- The Goals tab opens on the queues: every open goal, each in its queue
+  -- a goal on its own, a habit's goal, a sub-goal of one inactive, each
+  a queue of its own. The tree button shows the goals by status, as
+  before. A search shows the queues with a goal that matches.
+- Tap a queue's first line to fold it to that line, with how many goals
+  it holds; the queues folded stay folded when the app's opened again.
+- A queue waiting to start says when it's expected to: "Waiting to start
+  · expected Dec 2", going by when what it waits for is due. Or why
+  there's no telling: ready but held back, or what it waits for has no
+  deadline.
+- A queued goal with a long title is no longer cut off at a phone's
+  width.
+
 ## 7.284.0
 
 - An event the open proposal decided -- Claude's change or your own

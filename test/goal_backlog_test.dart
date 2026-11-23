@@ -1,6 +1,8 @@
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 import 'package:time_tracker_client/models/goal.dart';
 import 'package:time_tracker_client/models/goal_activation.dart';
 import 'package:time_tracker_client/screens/goals_pane.dart';
@@ -33,6 +35,11 @@ Goal _goal(
 void main() {
   late InMemoryGoalsRepository repository;
 
+  setUp(
+    () => SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty(),
+  );
+
   Future<void> pump(WidgetTester tester, List<Goal> goals) async {
     tester.view.physicalSize = const Size(800, 1400);
     tester.view.devicePixelRatio = 1;
@@ -48,8 +55,6 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Show the backlog'));
     await tester.pumpAndSettle();
   }
 
@@ -115,5 +120,76 @@ void main() {
     expect(waitsFor(saved['Send']!), ['Work']);
     expect(waitsFor(saved['Draft']!), ['Send']);
     expect(waitsFor(saved['Review']!), ['Draft']);
+  });
+
+  testWidgets('the queues come first, with every open goal; the status '
+      'view is the other', (tester) async {
+    await pump(tester, [
+      ...queue,
+      _goal('Alone', status: 'active', deadline: '2026-12-10'),
+    ]);
+    expect(listed(tester), ['Work', 'Draft', 'Review', 'Send', 'Alone']);
+    expect(find.text('Active'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Show the goal tree'));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Show the queues'), findsOneWidget);
+    expect(find.text('Active: the next starts as it closes'), findsNothing);
+  });
+
+  testWidgets('a search shows the queues with a goal it matches', (
+    tester,
+  ) async {
+    await pump(tester, [
+      ...queue,
+      _goal('Alone', status: 'active', deadline: '2026-12-10'),
+    ]);
+    await tester.enterText(find.byType(TextField), 'review');
+    await tester.pumpAndSettle();
+    expect(listed(tester), ['Work', 'Draft', 'Review', 'Send']);
+
+    await tester.enterText(find.byType(TextField), 'nothing like it');
+    await tester.pumpAndSettle();
+    expect(listed(tester), isEmpty);
+    expect(find.text('Nothing matches “nothing like it”.'), findsOneWidget);
+  });
+
+  testWidgets('a queue folds to its first line, and stays folded when '
+      'shown again', (tester) async {
+    await pump(tester, queue);
+    await tester.tap(find.text('Active: the next starts as it closes'));
+    await tester.pumpAndSettle();
+    expect(listed(tester), isEmpty);
+    expect(find.text('4 goals'), findsOneWidget);
+
+    // As when the app's opened again.
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, queue);
+    expect(listed(tester), isEmpty);
+    await tester.tap(find.text('Active: the next starts as it closes'));
+    await tester.pumpAndSettle();
+    expect(listed(tester), ['Work', 'Draft', 'Review', 'Send']);
+  });
+
+  testWidgets('a queue waiting to start says when it is expected to', (
+    tester,
+  ) async {
+    await pump(tester, [
+      Goal.fromJson({
+        'id': 'Dated',
+        'title': 'Dated',
+        'status': 'inactive',
+        'deadline': '2026-12-31',
+        'activate_when': {
+          'after': [
+            {'at': '2026-12-08'},
+          ],
+        },
+        'history': [
+          {'status': 'inactive', 'at': '2026-11-01T09:00:00'},
+        ],
+      }),
+    ]);
+    expect(find.text('Waiting to start · expected Dec 8'), findsOneWidget);
   });
 }
