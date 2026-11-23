@@ -67,12 +67,14 @@ class GoalQueue {
   Iterable<QueueNode> get all => front.all;
 }
 
-/// Whether [goal] belongs in a queue at all: open, not made by a habit,
-/// and not under an inactive goal -- that comes with its parent.
-bool _queueable(Goal goal, GoalTree tree) =>
+/// Whether [goal] belongs in a queue at all: open, and -- unless
+/// [allOpen] -- not made by a habit, nor under an inactive goal (that
+/// comes with its parent).
+bool _queueable(Goal goal, GoalTree tree, {bool allOpen = false}) =>
     goal.open &&
-    goal.habitId == null &&
-    !tree.ancestorsOf(goal.id).any((g) => g.inactive);
+    (allOpen ||
+        goal.habitId == null &&
+            !tree.ancestorsOf(goal.id).any((g) => g.inactive));
 
 /// The goal [goal] is placed behind: of the open goals it waits for, the
 /// one expected to close last (one with no deadline to go by counting as
@@ -101,11 +103,18 @@ Goal? placedBehind(Goal goal, GoalTree tree, {required DateTime now}) {
 /// The queues in [goals]: each inactive goal that can be queued, and each
 /// active one with something queued behind it, in trees. Active ones
 /// first, then the rest by priority and when they're expected to start.
-List<GoalQueue> goalQueues(List<Goal> goals, {required DateTime now}) {
+/// With [allOpen], every open goal is in one: those made by habits and
+/// those under inactive goals too, and an active goal with nothing
+/// behind it is a queue of its own.
+List<GoalQueue> goalQueues(
+  List<Goal> goals, {
+  required DateTime now,
+  bool allOpen = false,
+}) {
   final tree = GoalTree(goals);
   final shown = {
     for (final g in goals)
-      if (_queueable(g, tree)) g.id: g,
+      if (_queueable(g, tree, allOpen: allOpen)) g.id: g,
   };
   final nodes = <String, QueueNode>{};
   final behind = <String, Goal?>{};
@@ -132,8 +141,8 @@ List<GoalQueue> goalQueues(List<Goal> goals, {required DateTime now}) {
     }
   }
   for (final g in shown.values) {
-    if (g.active && nodes[g.id]?.next.isNotEmpty == true) {
-      fronts.add(nodes[g.id]!);
+    if (g.active && (allOpen || nodes[g.id]?.next.isNotEmpty == true)) {
+      fronts.add(node(g));
     }
   }
   int byStart(QueueNode a, QueueNode b) {

@@ -68,6 +68,16 @@ List<String> startsLines(BuildContext context, Goal goal, GoalTree tree) {
   ];
 }
 
+/// When an expected start [at] is, as "Oct 30", or "Oct 30, 9:00 AM" if
+/// it's not at the start of its day.
+String startDayLabel(BuildContext context, DateTime at) {
+  final strings = MaterialLocalizations.of(context);
+  final day = strings.formatShortMonthDay(at);
+  return at.hour == 0 && at.minute == 0
+      ? day
+      : '$day, ${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+}
+
 /// When [goal], waiting to be activated, starts, in a line for its tile,
 /// its goals named from [tree]: "Starts Oct 30" (or "Starts Oct 30, 9:00
 /// AM") if it's expected to ([expectedStart]); ready by [now], "Ready,
@@ -80,13 +90,8 @@ String startsSummary(
   GoalTree tree, {
   required DateTime now,
 }) {
-  final strings = MaterialLocalizations.of(context);
   if (expectedStart(goal, tree, now: now) case final at?) {
-    final day = strings.formatShortMonthDay(at);
-    return at.hour == 0 && at.minute == 0
-        ? 'Starts $day'
-        : 'Starts $day, '
-              '${strings.formatTimeOfDay(TimeOfDay.fromDateTime(at))}';
+    return 'Starts ${startDayLabel(context, at)}';
   }
   if (readyAt(goal, tree) case final at? when !at.isAfter(now)) {
     return switch (holding(goal, tree)) {

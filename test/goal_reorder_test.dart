@@ -49,6 +49,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Show the goal tree'));
+    await tester.pumpAndSettle();
   }
 
   List<String> listed(WidgetTester tester) => [

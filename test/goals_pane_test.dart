@@ -63,6 +63,7 @@ void main() {
     VoidCallback? onQuickAdd,
     List<Goal>? goals,
     Size size = const Size(800, 1600),
+    bool byStatus = true,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -87,6 +88,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    if (byStatus) {
+      await tester.tap(find.byTooltip('Show the goal tree'));
+      await tester.pumpAndSettle();
+    }
   }
 
   List<(String, int)> listed(WidgetTester tester) => [

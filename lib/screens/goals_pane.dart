@@ -12,19 +12,21 @@ import '../widgets/plan_pane.dart';
 import '../widgets/plan_summaries.dart';
 import 'goal_screen.dart';
 
-/// The Plan page's Goals pane -- what the user aims for: every goal, as a
-/// tree, each indented under those it's under, soonest due first among
-/// those beside it, each with when it's due and the time spent toward it
-/// (by the events kept on the device). Tapping one opens its page
-/// ([GoalScreen]); its button edits it. By default the inactive and
-/// active ones are shown, and the filter shows others; a search shows
-/// those that match, at any depth. Either way, the goals one's under show
+/// The Plan page's Goals pane -- what the user aims for. First, every
+/// open goal in its queue ([GoalBacklog]): the goals queued to start one
+/// after another, dragged to reorder them, and each other open goal a
+/// queue of its own; a search shows the queues with a goal that matches.
+/// The tree button shows every goal by status instead, as a tree, each
+/// indented under those it's under, soonest due first among those beside
+/// it. Either way each goal has when it's due and the time spent toward
+/// it (by the events kept on the device). Tapping one opens its page
+/// ([GoalScreen]); its button edits it. By status, the inactive and
+/// active ones are shown by default, and the filter shows others; a
+/// search shows those that match, at any depth, the goals one's under
 /// above it, whatever their status. "+" adds a top-level goal, on its
 /// full page; the round
 /// "+" in the corner, given [onQuickAdd], the quick New goal sheet the
-/// home screen widget opens. The queue button shows the backlog
-/// instead: the goals queued to start one after another ([GoalBacklog]),
-/// dragged to reorder them. Above it all, with a
+/// home screen widget opens. Above it all, with a
 /// [summary] to measure, the time in its window by top-level goal. It
 /// shows what [memory] has, while it loads afresh.
 class GoalsPane extends StatefulWidget {
@@ -53,8 +55,9 @@ class GoalsPaneState extends State<GoalsPane> {
   var _statuses = const {'inactive', 'active'};
   var _query = '';
 
-  /// Whether the backlog's shown in place of the tree.
-  var _backlog = false;
+  /// Whether the goals are shown by status, as a tree, in place of the
+  /// queues.
+  var _byStatus = false;
 
   /// Whether they've been asked for, this visit, and couldn't be had.
   bool _failed = false;
@@ -108,15 +111,14 @@ class GoalsPaneState extends State<GoalsPane> {
     final view = widget.summary;
     final tree = GoalTree(goals ?? const []);
     final spent = keptGoalTime(widget.memory, tree);
+    bool matches(Goal g) => matchesSearch(_query, [
+      g.title,
+      g.description,
+      g.definitionOfDone,
+      g.attributionHints,
+    ]);
     final shown = tree.outline(
-      (g) =>
-          _statuses.contains(g.status) &&
-          matchesSearch(_query, [
-            g.title,
-            g.description,
-            g.definitionOfDone,
-            g.attributionHints,
-          ]),
+      (g) => _statuses.contains(g.status) && matches(g),
     );
     return PlanPane(
       searchHint: 'Search goals',
@@ -130,12 +132,13 @@ class GoalsPaneState extends State<GoalsPane> {
             ),
       actions: [
         IconButton(
-          tooltip: _backlog ? 'Show all goals' : 'Show the backlog',
-          isSelected: _backlog,
-          icon: const Icon(Icons.low_priority),
-          onPressed: () => setState(() => _backlog = !_backlog),
+          tooltip: _byStatus ? 'Show the queues' : 'Show the goal tree',
+          icon: Icon(
+            _byStatus ? Icons.low_priority : Icons.account_tree_outlined,
+          ),
+          onPressed: () => setState(() => _byStatus = !_byStatus),
         ),
-        if (!_backlog)
+        if (_byStatus)
           GoalStatusFilter(
             statuses: _statuses,
             onChanged: (picked) => setState(() => _statuses = picked),
@@ -168,8 +171,11 @@ class GoalsPaneState extends State<GoalsPane> {
                 ),
               ],
             ),
-            _ when _backlog => GoalBacklog(
+            _ when !_byStatus => GoalBacklog(
               goals: goals!,
+              allOpen: true,
+              matches: _query.trim().isEmpty ? null : matches,
+              noMatches: NoMatches(query: _query),
               padding: widget.onQuickAdd == null
                   ? null
                   : const EdgeInsets.only(bottom: 88),

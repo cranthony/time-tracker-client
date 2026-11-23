@@ -68,6 +68,34 @@ void main() {
     expect(_queues([...queue, alone]), ['active: work > a > b > c']);
   });
 
+  test('with every open goal, a goal on its own, a habit goal and one '
+      'under an inactive goal are queues too', () {
+    final alone = _goal('alone', status: 'active', deadline: '2026-12-10');
+    final habit = Goal(
+      id: 'habit',
+      title: 'habit',
+      status: 'active',
+      deadline: '2026-12-20',
+      habitId: 'walk',
+      history: [StatusChange('active', DateTime(2026, 11, 1))],
+    );
+    final parked = _goal('parked', held: true);
+    final under = _goal('under', parent: 'parked', held: true);
+    final done = _goal('done', status: 'done');
+    final goals = [...queue, alone, habit, parked, under, done];
+    expect(_queues(goals), ['active: work > a > b > c', 'onHold: parked']);
+    expect(
+      [for (final q in goalQueues(goals, now: _now, allOpen: true)) _drawn(q)],
+      [
+        'active: work > a > b > c',
+        'active: alone',
+        'active: habit',
+        'onHold: parked',
+        'onHold: under',
+      ],
+    );
+  });
+
   test('fronts on hold, waiting for a time, and forks', () {
     final held = _goal('held', held: true);
     final later = _goal(
