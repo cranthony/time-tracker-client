@@ -271,6 +271,8 @@ class _GoalBacklogState extends State<GoalBacklog> {
       _Header(:final queue) => Padding(
         padding: const EdgeInsets.only(top: 8),
         child: InkWell(
+          // Not a stop for J and K, which go from goal to goal.
+          canRequestFocus: false,
           onTap: () => _toggle(queue.front.goal.id, queues),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 16, 4),
