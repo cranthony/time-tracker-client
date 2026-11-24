@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.286.0
+
+- The queues on the Goals tab sort by when they start: the active ones
+  first, then the rest by the day they're expected to start -- one ready
+  now counting as today, and one with no telling when last -- with
+  priority deciding among those starting the same day. Branches that
+  start together as a goal closes sort the same way.
+
 ## 7.285.0
 
 - The Goals tab opens on the queues: every open goal, each in its queue
