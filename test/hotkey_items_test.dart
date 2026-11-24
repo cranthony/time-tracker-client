@@ -117,6 +117,35 @@ void main() {
       expect(highlighted(), 'Item 0');
     });
 
+    testWidgets('Shift+K reaches the last item of a list whose items '
+        'further on are taller than those built', (tester) async {
+      await tester.pumpWidget(
+        withHotkeys(
+          Scaffold(
+            body: HotkeyItems(
+              child: ListView(
+                children: [
+                  for (var i = 0; i < 40; i++)
+                    SizedBox(
+                      height: i < 20 ? 40 : 200,
+                      child: TextButton(
+                        onPressed: () {},
+                        child: Text('Item $i'),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await shiftPress(tester, LogicalKeyboardKey.keyK);
+      expect(highlighted(), 'Item 39');
+      await shiftPress(tester, LogicalKeyboardKey.keyJ);
+      expect(highlighted(), 'Item 0');
+    });
+
     testWidgets('K starts at the last of the list wholly in view', (
       tester,
     ) async {

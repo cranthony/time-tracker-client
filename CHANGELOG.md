@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.286.1
+
+- Shift+K, or End, on the Notes page -- or any list that builds only
+  what's near the view -- reaches its last item even when the items
+  further on are taller than those shown, rather than stopping on one
+  short of it.
+
 ## 7.286.0
 
 - The queues on the Goals tab sort by when they start: the active ones
