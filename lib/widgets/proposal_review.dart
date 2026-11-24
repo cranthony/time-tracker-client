@@ -1636,11 +1636,16 @@ class ProposalGoalStrip extends StatelessWidget {
             icon: const Icon(Icons.play_arrow_outlined),
           ),
         if (onSettle != null)
-          IconButton(
-            tooltip: settled == null ? 'Settle it' : 'Change how it’s settled',
-            visualDensity: VisualDensity.compact,
-            onPressed: onSettle,
-            icon: const Icon(Icons.rule),
+          HotkeyHint(
+            Hotkey.settleGoal,
+            child: IconButton(
+              tooltip: settled == null
+                  ? 'Settle it'
+                  : 'Change how it’s settled',
+              visualDensity: VisualDensity.compact,
+              onPressed: onSettle,
+              icon: const Icon(Icons.rule),
+            ),
           ),
         if (onTagged != null)
           IconButton(

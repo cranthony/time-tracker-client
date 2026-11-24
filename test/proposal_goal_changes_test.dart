@@ -3,6 +3,7 @@
 // applied now, dropped, changed, or missed and tried again.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/models/goal.dart';
@@ -14,6 +15,7 @@ import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/goals_repository.dart';
 import 'package:time_tracker_client/services/plan_memory.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
+import 'package:time_tracker_client/widgets/hotkeys.dart';
 
 void main() {
   final now = DateTime(2026, 9, 30, 12);
@@ -244,6 +246,7 @@ void main() {
       WidgetTester tester, {
       Map<String, Object?> extra = const {},
       List<Goal> more = const [],
+      Hotkeys? hotkeys,
     }) async {
       tester.view.physicalSize = const Size(800, 1400);
       tester.view.devicePixelRatio = 1;
@@ -263,6 +266,11 @@ void main() {
           child: GoalsScope(
             repository: store,
             child: MaterialApp(
+              navigatorObservers: [?hotkeys],
+              builder: hotkeys == null
+                  ? null
+                  : (context, child) =>
+                        HotkeyScope(hotkeys: hotkeys, child: child!),
               home: EventsScreen(
                 repository: proposals.events!,
                 serverLabel: 'offline demo',
@@ -338,6 +346,30 @@ void main() {
             .onPressed,
         isNull,
       );
+    });
+
+    testWidgets('S settles the goal shown, as Settle it does -- only on '
+        'the Goals page', (tester) async {
+      await open(tester, hotkeys: Hotkeys());
+      Future<void> pressS() async {
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyS);
+        await tester.pumpAndSettle();
+      }
+
+      // Off the Goals page: S leaves the goals be.
+      await pressS();
+      expect(find.text('Drop it'), findsNothing);
+
+      await page(tester, 'Goals (2)');
+      await pressS();
+      expect(find.text('Drop it'), findsOneWidget);
+      await tester.tap(find.text('Drop it'));
+      await tester.pumpAndSettle();
+      expect(lastSent(), {
+        'goal_changes': [
+          {'goal_id': 'recipe', 'use': 'drop'},
+        ],
+      });
     });
 
     testWidgets('applies one now, from its button: the goal is changed, and '
