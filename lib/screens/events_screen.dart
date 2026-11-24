@@ -1055,6 +1055,18 @@ class _EventsScreenState extends State<EventsScreen> {
     unawaited(_confirmProposal());
   }
 
+  /// S: settles the change of the goal shown on the proposal's Goals
+  /// page, as its Settle it does -- or says there's none to.
+  void _keySettleGoal() {
+    if (_proposalBusy) return;
+    final change = _goalInReview?.change;
+    if (change == null) {
+      HotkeyScope.maybeOf(context)?.say('No change of this goal to settle');
+      return;
+    }
+    unawaited(_settleGoalChange(change));
+  }
+
   /// P, or Shift+N: back to what was reviewed before what's shown.
   void _keyReviewPrevious() {
     if (_proposalBusy) return;
@@ -3807,6 +3819,11 @@ class _EventsScreenState extends State<EventsScreen> {
         _keyReviewPrevious,
         when: () => _reviewSteps.isNotEmpty,
       ),
+    HotkeyBinding(
+      const HotkeyTrigger.key(LogicalKeyboardKey.keyS),
+      _keySettleGoal,
+      when: () => _shownPage == ProposalDetailPage.goals,
+    ),
     HotkeyBinding(const HotkeyTrigger.key(LogicalKeyboardKey.keyD), _pickDay),
     HotkeyBinding(
       const HotkeyTrigger.key(LogicalKeyboardKey.keyG),

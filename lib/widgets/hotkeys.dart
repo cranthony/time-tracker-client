@@ -244,6 +244,12 @@ class Hotkey {
     "In a proposal's review, go back to the thing before",
     HotkeyPlace.events,
   );
+  static const settleGoal = Hotkey(
+    'S',
+    "On a proposal's Goals page, settle the change of the goal shown, as "
+        'its Settle it does',
+    HotkeyPlace.events,
+  );
   static const pickDay = Hotkey(
     'D',
     'Pick a day to go to, in the date picker',
@@ -484,6 +490,7 @@ class Hotkey {
     reviewPrevious,
     reviewUnseen,
     confirmProposal,
+    settleGoal,
     pickDay,
     create,
     moveCursor,

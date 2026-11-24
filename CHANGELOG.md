@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.287.0
+
+- S settles the goal shown on a proposal's Goals page, as its Settle it
+  button does; the button shows S as its hotkey, and the hotkey list
+  has it.
+
 ## 7.286.1
 
 - Shift+K, or End, on the Notes page -- or any list that builds only
