@@ -1264,17 +1264,25 @@ bool _toEnd(
 }) {
   final position = Scrollable.maybeOf(rows.first.first.context!)?.position;
   if (position != null && position.axis == Axis.vertical) {
-    final edge = last ? position.maxScrollExtent : position.minScrollExtent;
-    if (position.pixels != edge) {
-      position.jumpTo(edge);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!(within.context?.mounted ?? false)) return;
-        final now = _itemRows(within);
-        if (now.isEmpty) return;
-        _highlight((last ? now.last : now.first).first, later: last);
-      });
-      return true;
+    // Such a list only guesses where its end is, from the items it's
+    // built -- short of it, where those further on are taller: so again,
+    // once those are built, until it's there.
+    void scrollToEdge(int tries) {
+      final edge = last ? position.maxScrollExtent : position.minScrollExtent;
+      if (position.pixels != edge && tries > 0) {
+        position.jumpTo(edge);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (within.context?.mounted ?? false) scrollToEdge(tries - 1);
+        });
+        return;
+      }
+      final now = _itemRows(within);
+      if (now.isEmpty) return;
+      _highlight((last ? now.last : now.first).first, later: last);
     }
+
+    scrollToEdge(20);
+    return true;
   }
   _highlight((last ? rows.last : rows.first).first, later: last);
   return true;
