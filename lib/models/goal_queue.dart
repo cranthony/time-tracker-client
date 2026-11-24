@@ -102,7 +102,8 @@ Goal? placedBehind(Goal goal, GoalTree tree, {required DateTime now}) {
 
 /// The queues in [goals]: each inactive goal that can be queued, and each
 /// active one with something queued behind it, in trees. Active ones
-/// first, then the rest by priority and when they're expected to start.
+/// first, then the rest by the day they're expected to start (ready now,
+/// today; no telling when, last), then by priority, then by the time.
 /// With [allOpen], every open goal is in one: those made by habits and
 /// those under inactive goals too, and an active goal with nothing
 /// behind it is a queue of its own.
@@ -145,15 +146,36 @@ List<GoalQueue> goalQueues(
       fronts.add(node(g));
     }
   }
+
+  /// When [g] is expected to start: now, if it's ready and not held;
+  /// null if there's no telling, or it's started.
+  DateTime? startOf(Goal g) {
+    if (!g.inactive) return null;
+    if (expectedStart(g, tree, now: now) case final at?) return at;
+    final ready = readyAt(g, tree);
+    return ready != null && !ready.isAfter(now) && !isHeld(g, tree)
+        ? now
+        : null;
+  }
+
+  // By the day each starts, then priority, then the time in the day.
   int byStart(QueueNode a, QueueNode b) {
+    final sa = startOf(a.goal);
+    final sb = startOf(b.goal);
+    if ((sa == null) != (sb == null)) return sa == null ? 1 : -1;
+    if (sa != null && sb != null) {
+      final byDay = DateTime(
+        sa.year,
+        sa.month,
+        sa.day,
+      ).compareTo(DateTime(sb.year, sb.month, sb.day));
+      if (byDay != 0) return byDay;
+    }
     final byPriority = tree
         .priorityOf(a.goal.id)
         .compareTo(tree.priorityOf(b.goal.id));
     if (byPriority != 0) return byPriority;
-    final sa = expectedStart(a.goal, tree, now: now);
-    final sb = expectedStart(b.goal, tree, now: now);
     if (sa != null && sb != null && sa != sb) return sa.compareTo(sb);
-    if ((sa == null) != (sb == null)) return sa == null ? 1 : -1;
     return compareByDeadline(a.goal, b.goal);
   }
 

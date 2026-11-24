@@ -112,6 +112,47 @@ void main() {
     ]);
   });
 
+  test('queues sort active first, then by the day they start, then by '
+      'priority', () {
+    Goal at(String id, String day, {int? priority}) => Goal(
+      id: id,
+      title: id,
+      status: 'inactive',
+      deadline: '2026-12-31',
+      priority: priority,
+      activateWhen: {
+        'after': [
+          {'at': day},
+        ],
+      },
+      history: [StatusChange('inactive', DateTime(2026, 11, 1))],
+    );
+    final goals = [
+      at('late-urgent', '2026-12-10', priority: 1),
+      at('soon-low', '2026-12-02', priority: 4),
+      at('soon-urgent', '2026-12-02T15:00', priority: 1),
+      at('soon-low-early', '2026-12-02T08:00', priority: 4),
+      _goal('held', held: true),
+      at('ready', '2026-11-20'),
+      _goal('busy', status: 'active', deadline: '2026-12-20'),
+    ];
+    expect(
+      [
+        for (final q in goalQueues(goals, now: _now, allOpen: true))
+          q.front.goal.id,
+      ],
+      [
+        'busy',
+        'ready',
+        'soon-urgent',
+        'soon-low',
+        'soon-low-early',
+        'late-urgent',
+        'held',
+      ],
+    );
+  });
+
   test('one waiting for two is behind the one expected to close last', () {
     final other = _goal('other', status: 'active', deadline: '2026-12-20');
     final both = _goal(
