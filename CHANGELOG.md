@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.288.0
+
+- When a goal's expected to start says the day so you can picture it:
+  "Starts today, 3:00 PM", "Starts tomorrow (Wed, Nov 25)", or "Starts
+  Fri, Nov 27" -- on its tile, on its page, in the queue picker and in a
+  waiting queue's first line.
+
 ## 7.287.0
 
 - S settles the goal shown on a proposal's Goals page, as its Settle it

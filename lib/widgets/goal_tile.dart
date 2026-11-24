@@ -132,7 +132,7 @@ class GoalTile extends StatelessWidget {
           (null, null) => 'Waiting',
           (null, final starts?) =>
             'Waiting, to start '
-                '${MaterialLocalizations.of(context).formatShortMonthDay(starts)}',
+                '${startDayLabel(context, starts, now: DateTime.now())}',
         }
       else if (!goal.active)
         goalStatuses[goal.status] ?? goal.status,

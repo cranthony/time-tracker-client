@@ -214,7 +214,7 @@ class _GoalBacklogState extends State<GoalBacklog> {
   /// ready but held back.
   String _expected(BuildContext context, Goal goal, GoalTree tree) {
     if (expectedStart(goal, tree, now: _now) case final at?) {
-      return ' · expected ${startDayLabel(context, at)}';
+      return ' · expected ${startDayLabel(context, at, now: _now)}';
     }
     if ((readyAt(goal, tree), holding(goal, tree))
         case (final ready?, final hold?) when !ready.isAfter(_now)) {

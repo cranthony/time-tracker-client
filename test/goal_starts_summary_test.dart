@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:time_tracker_client/models/goal.dart';
+import 'package:time_tracker_client/widgets/goal_starts.dart';
 import 'package:time_tracker_client/widgets/goal_tile.dart';
 
 Goal _goal(
@@ -55,8 +56,30 @@ void main() {
         ],
       }),
     ]);
-    expect(find.text('Starts Nov 2'), findsOneWidget);
-    expect(find.text('Starts Nov 2, 9:00 AM'), findsOneWidget);
+    expect(find.text('Starts Mon, Nov 2'), findsOneWidget);
+    expect(find.text('Starts Mon, Nov 2, 9:00 AM'), findsOneWidget);
+  });
+
+  testWidgets('a start is pictured by its day: today, tomorrow with its '
+      'weekday and date, or else its weekday and date', (tester) async {
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (c) {
+            context = c;
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+    final now = DateTime(2026, 11, 24, 16);
+    String label(DateTime at) => startDayLabel(context, at, now: now);
+    expect(label(DateTime(2026, 11, 24, 18)), 'today, 6:00 PM');
+    expect(label(DateTime(2026, 11, 25)), 'tomorrow (Wed, Nov 25)');
+    expect(label(DateTime(2026, 11, 25, 9)), 'tomorrow (Wed, Nov 25), 9:00 AM');
+    expect(label(DateTime(2026, 11, 27)), 'Fri, Nov 27');
+    expect(label(DateTime(2026, 12, 1)), 'Tue, Dec 1');
   });
 
   testWidgets('with no deadline to go by, it says what it waits for', (
