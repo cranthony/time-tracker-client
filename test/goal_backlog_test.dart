@@ -190,6 +190,6 @@ void main() {
         ],
       }),
     ]);
-    expect(find.text('Waiting to start · expected Dec 8'), findsOneWidget);
+    expect(find.text('Waiting to start · expected Tue, Dec 8'), findsOneWidget);
   });
 }

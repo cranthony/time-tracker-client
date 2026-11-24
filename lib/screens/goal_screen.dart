@@ -531,7 +531,9 @@ class _GoalScreenState extends State<GoalScreen> {
                   for (final line in startsLines(context, goal, tree))
                     Text(line),
                   Text(switch (expectedStart(goal, tree, now: DateTime.now())) {
-                    final at? => 'Expected to start ${_when(context, at)}',
+                    final at? =>
+                      'Expected to start '
+                          '${startDayLabel(context, at, now: DateTime.now())}',
                     null when isHeld(goal, tree) =>
                       'Held back for now: ready, with too many active',
                     null =>
