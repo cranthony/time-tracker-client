@@ -961,14 +961,20 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
 
   /// The fields of [write]'s item changed elsewhere since it was made:
   /// for a deletion, to say what deleting it would throw away.
-  static List<String> changedElsewhere(PendingWrite write) {
-    final current = write.current ?? const {};
-    final base = write.base ?? const {};
-    return [
-      for (final key in {...base.keys, ...current.keys})
-        if (key != 'version' && !_same(current[key], base[key])) key,
-    ];
-  }
+  static List<String> changedElsewhere(PendingWrite write) =>
+      changedSince(write.base ?? const {}, write.current ?? const {});
+
+  /// The fields that differ between [base] and [current], leaving out
+  /// the ones that only track versions (`version`, `etag`): a change to
+  /// those alone means nothing anyone would lose.
+  static List<String> changedSince(
+    Map<String, Object?> base,
+    Map<String, Object?> current,
+  ) => [
+    for (final key in {...base.keys, ...current.keys})
+      if (key != 'version' && key != 'etag' && !_same(current[key], base[key]))
+        key,
+  ];
 
   /// Sends [write], [PendingWrite.conflicted], again with [changes] --
   /// the user's picks -- made to the item as it is now.
@@ -1159,10 +1165,13 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
           final left = <({String? id, Map<String, Object?>? current})>[];
           for (final stale in e.conflicts) {
             final id = stale.id;
-            if (id != null && _partMerges(write, id, stale.current)) {
+            final which = id == null
+                ? null
+                : _partMerges(write, id, stale.current);
+            if (id != null && which != null) {
               write = _withPart(
                 write,
-                'updates',
+                which,
                 id,
                 (p) => {...p, 'base': stale.current},
               );
@@ -1207,8 +1216,11 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
   /// since its base -- or was changed the same.
   static bool _merges(PendingWrite write, Map<String, Object?>? current) {
     if (current == null || write.op == WriteOp.create) return false;
-    // A deletion of what's changed since is asked about first.
-    if (write.op == WriteOp.delete) return false;
+    // A deletion of what's changed since is asked about first; of what's
+    // only got a new version, it's sent again.
+    if (write.op == WriteOp.delete) {
+      return write.base != null && changedSince(write.base!, current).isEmpty;
+    }
     final base = write.base ?? const {};
     return write.changes.entries.every(
       (c) =>
@@ -1216,22 +1228,41 @@ class WriteQueue extends Outbox<PendingWrite, Map<String, Object?>?>
     );
   }
 
-  /// Whether [write], a [WriteOp.batch] write, can make its changes to
-  /// [id] to it as it is now, [current] (as [_merges] says for one item).
-  static bool _partMerges(
+  /// Which part of [write], a [WriteOp.batch] write, changes [id] --
+  /// `updates` or `deletes` -- if it can be made to it as it is now,
+  /// [current] (as [_merges] says for one item); null if it can't.
+  static String? _partMerges(
     PendingWrite write,
     String id,
     Map<String, Object?>? current,
   ) {
-    final part = write.parts('updates').where((p) => p['id'] == id).firstOrNull;
-    if (part == null || current == null) return false;
-    final base = (part['base'] as Map? ?? const {}).cast<String, Object?>();
-    final changes = (part['changes'] as Map? ?? const {})
-        .cast<String, Object?>();
-    return changes.entries.every(
-      (c) =>
-          _same(current[c.key], base[c.key]) || _same(current[c.key], c.value),
-    );
+    if (current == null) return null;
+    Map<String, Object?> base(Map<String, Object?> part) =>
+        (part['base'] as Map? ?? const {}).cast<String, Object?>();
+    final update = write
+        .parts('updates')
+        .where((p) => p['id'] == id)
+        .firstOrNull;
+    if (update != null) {
+      final was = base(update);
+      final changes = (update['changes'] as Map? ?? const {})
+          .cast<String, Object?>();
+      final merges = changes.entries.every(
+        (c) =>
+            _same(current[c.key], was[c.key]) || _same(current[c.key], c.value),
+      );
+      return merges ? 'updates' : null;
+    }
+    // A deletion of what's only got a new version is sent again.
+    final delete = write
+        .parts('deletes')
+        .where((p) => p['id'] == id)
+        .firstOrNull;
+    if (delete?['base'] case final Map _
+        when changedSince(base(delete!), current).isEmpty) {
+      return 'deletes';
+    }
+    return null;
   }
 
   /// [write], a [WriteOp.batch] write, with its [which] part for [id] as

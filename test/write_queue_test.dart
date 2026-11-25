@@ -329,6 +329,38 @@ void main() {
     expect(queue.items.single.conflicted, isTrue);
   });
 
+  test('a deletion of one only given a new version since is sent again, '
+      'to that version', () async {
+    queue.shown(WriteKind.location, [
+      {'id': 'loc1', 'name': 'Home', 'version': 1},
+    ]);
+    server.answers
+      ..add(
+        (_, _) => throw _conflict({'id': 'loc1', 'name': 'Home', 'version': 2}),
+      )
+      ..add((_, _) => {'deleted': true});
+    queue.delete(WriteKind.location, 'loc1');
+    await queue.flush();
+    await pumpEventQueue();
+
+    expect(queue.items, isEmpty);
+    expect(server.calls.map((c) => c.arguments['if_version']), [1, 2]);
+  });
+
+  test('a deletion shows what changed elsewhere, but not its version or '
+      'etag', () {
+    final write = PendingWrite(
+      id: 'w1',
+      kind: 'event',
+      op: WriteOp.delete,
+      itemId: 'lunch',
+      base: const {'summary': 'Lunch', 'etag': 'e1', 'version': 1},
+      current: const {'summary': 'Brunch', 'etag': 'e2', 'version': 2},
+    );
+
+    expect(WriteQueue.changedElsewhere(write), ['summary']);
+  });
+
   test('what waits is kept on the device, for the next run', () async {
     final store = InMemoryOutboxStore<PendingWrite>();
     queue = make(store);

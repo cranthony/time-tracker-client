@@ -203,6 +203,16 @@ void main() {
     expect(outbox.items.single.lastError, 'Changed elsewhere since');
   });
 
+  test('a cancel of one only given a new etag since is sent again with '
+      'it', () async {
+    await outbox.cancel(Event.fromJson(_lunch()));
+    server.answers.add(_conflict(_lunch(etag: 'e2')));
+    await outbox.flush();
+
+    expect(outbox.items, isEmpty);
+    expect(server.sent.map((s) => s['etag']), ['e1', 'e2']);
+  });
+
   group('a batch', () {
     Overwrite batch() => Overwrite(
       updates: [
@@ -242,6 +252,23 @@ void main() {
       expect(outbox.items, isEmpty);
       expect((server.batches.last['lunch']! as (Object?, Object?)).$1, 'e2');
       expect((server.batches.last['gym']! as (Object?, Object?)).$1, 'g1');
+    });
+
+    test('one of its cancels only given a new etag since: sent again with '
+        'it', () async {
+      await outbox.makeRoom(batch());
+      server.answers.add(
+        McpException(
+          'Tool update_event failed: event changed after it was read',
+          meta: {
+            'conflict': {'id': 'gym', 'current': _gym(etag: 'g2')},
+          },
+        ),
+      );
+      await outbox.flush();
+
+      expect(outbox.items, isEmpty);
+      expect((server.batches.last['gym']! as (Object?, Object?)).$1, 'g2');
     });
 
     test('one changed in the same way waits, conflicted, naming it; dropped, '
