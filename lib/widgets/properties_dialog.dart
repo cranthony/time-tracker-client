@@ -66,74 +66,14 @@ class PropertyLink {
 /// A change offered as a button of its own, after the user confirms it,
 /// such as cancelling an event.
 class OneWayAction {
-  const OneWayAction({
-    required this.label,
-    required this.question,
-    required this.explanation,
-    required this.keepLabel,
-    required this.changes,
-    this.option,
-  });
+  const OneWayAction({required this.label, required this.confirm});
 
-  /// The button's text, also the confirming button's.
+  /// The button's text.
   final String label;
-  final String question;
-  final String explanation;
 
-  /// The button that backs out.
-  final String keepLabel;
-
-  /// What [label] saves.
-  final Map<String, Object?> changes;
-
-  /// A switch offered while confirming it, as it says to begin with: its
-  /// key is saved with [changes], true or false.
-  final ConfirmOption? option;
-}
-
-/// A switch a confirmation offers -- e.g. whether cancelling an event
-/// counts against follow-through.
-class ConfirmOption {
-  const ConfirmOption({
-    required this.key,
-    required this.label,
-    required this.explanation,
-    this.initial = false,
-  });
-
-  /// What it's saved as, with the rest of the change.
-  final String key;
-  final String label;
-  final String explanation;
-
-  /// Whether it's on as the confirmation opens.
-  final bool initial;
-}
-
-/// [explanation], then [option]'s switch if there is one -- [on] says
-/// whether it's on, and [toggle] turns it.
-Widget confirmationContent(
-  String explanation,
-  ConfirmOption? option, {
-  required bool on,
-  required ValueChanged<bool> toggle,
-}) {
-  if (option == null) return Text(explanation);
-  return Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Text(explanation),
-      const SizedBox(height: 8),
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        value: on,
-        onChanged: toggle,
-        title: Text(option.label),
-        subtitle: Text(option.explanation),
-      ),
-    ],
-  );
+  /// Asks whether to go ahead: the changes to save if so, or null to call
+  /// it off.
+  final Future<Map<String, Object?>?> Function(BuildContext context) confirm;
 }
 
 /// Shows each of [properties] under a title [title] makes from them: its
@@ -501,40 +441,8 @@ class _PropertiesDialogState<R> extends State<_PropertiesDialog<R>> {
   }
 
   Future<void> _oneWay(OneWayAction action) async {
-    var on = action.option?.initial ?? false;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(action.question),
-          content: confirmationContent(
-            action.explanation,
-            action.option,
-            on: on,
-            toggle: (value) => setState(() => on = value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(action.keepLabel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-              ),
-              child: Text(action.label),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed == true) {
-      await _save({
-        ...action.changes,
-        if (action.option case final option?) option.key: on,
-      });
-    }
+    final changes = await action.confirm(context);
+    if (changes != null && mounted) await _save(changes);
   }
 
   Future<void> _confirmDiscard() async {

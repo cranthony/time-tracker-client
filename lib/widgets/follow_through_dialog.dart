@@ -18,13 +18,16 @@ class CalledOff implements Exception {
 /// rather than a change of plan. Each starts as a change of plan. Returns
 /// the ids of those that count, or null if the change was called off.
 /// Not [makingRoom] -- cancelled for their own sake -- it doesn't say
-/// it's to make room. J and K go from one cancel's switch to the next,
+/// it's to make room -- as when one event is cancelled from its own
+/// dialog. [note], if given, goes under what it asks: that the rest of a
+/// series stays, say. J and K go from one cancel's switch to the next,
 /// as do 1-9 straight to one, and Ctrl+Enter cancels them, as the
 /// cancel button does.
 Future<Set<String>?> askFollowThrough(
   BuildContext context,
   List<Event> cancels, {
   bool makingRoom = true,
+  String? note,
 }) async {
   if (cancels.isEmpty) return const {};
   final counts = <String>{};
@@ -61,6 +64,10 @@ Future<Set<String>?> askFollowThrough(
                     'it for.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (note != null) ...[
+                    const SizedBox(height: 4),
+                    Text(note, style: Theme.of(context).textTheme.bodySmall),
+                  ],
                   const SizedBox(height: 8),
                   HotkeyItems(
                     child: Column(
@@ -103,7 +110,7 @@ Future<Set<String>?> askFollowThrough(
               Hotkey.discard,
               child: TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Keep them'),
+                child: Text(n == 1 ? 'Keep it' : 'Keep them'),
               ),
             ),
             HotkeyHint(

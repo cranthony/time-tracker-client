@@ -2148,7 +2148,7 @@ void main() {
         );
         await tap(tester, find.text('Reading'));
         await tap(tester, find.byTooltip('Cancel event'));
-        await tap(tester, find.widgetWithText(FilledButton, 'Cancel event'));
+        await tap(tester, find.widgetWithText(FilledButton, 'Cancel it'));
 
         expect(proposals.amends, isEmpty);
         expect([

@@ -6,6 +6,15 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.289.0
+
+- Cancelling one event -- from its trash can, or "Cancel event" in its
+  details -- asks as cancelling several does: the event listed with its
+  switch, starting as a change of plan. J and K (Shift+J, Shift+K, Home
+  and End) reach the switch, Enter or Space flips it, Ctrl+Enter cancels
+  it and Esc keeps it. In a series, it says the rest of the series stays.
+- Asked about one event, the button that backs out says "Keep it".
+
 ## 7.288.1
 
 - Cancelling or deleting something that was only given a new version
