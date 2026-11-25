@@ -804,9 +804,10 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
   }
 
   /// [item] made to the event [id] as it is now, [current] -- if it can
-  /// be: it's still there, it's updated (a cancel of one changed is asked
-  /// about first), and nothing the update changes was changed elsewhere
-  /// since, or was changed the same. Null if it can't.
+  /// be: it's still there, and nothing the update changes was changed
+  /// elsewhere since, or was changed the same; or, cancelled, nothing but
+  /// its etag changed (a cancel of one changed is asked about first). Null
+  /// if it can't.
   static PendingEventWrite? _rebased(
     PendingEventWrite item,
     String id,
@@ -823,13 +824,28 @@ class EventOutbox extends Outbox<PendingEventWrite, Object?>
       );
     }
 
-    if (item.kind == EventWriteKind.update) {
-      final base = item.event;
-      if (base == null || !merges(base, item.changes)) return null;
-      return item.copyWith(event: () => now);
+    // A cancel of one that's only got a new etag is sent again.
+    bool unchanged(Event base) =>
+        WriteQueue.changedSince(base.toJson(), now.toJson()).isEmpty;
+
+    switch (item.kind) {
+      case EventWriteKind.update:
+        final base = item.event;
+        if (base == null || !merges(base, item.changes)) return null;
+        return item.copyWith(event: () => now);
+      case EventWriteKind.cancel:
+        final base = item.event;
+        if (base == null || !unchanged(base)) return null;
+        return item.copyWith(event: () => now);
+      case _:
     }
-    final (base, changes) = item.over.updateOf(id) ?? (null, null);
-    if (base == null || changes == null || !merges(base, changes)) return null;
+    if (item.over.updateOf(id) case (final base, final changes)) {
+      if (!merges(base, changes)) return null;
+    } else if (item.over.cancelOf(id) case final base?) {
+      if (!unchanged(base)) return null;
+    } else {
+      return null;
+    }
     return item.copyWith(over: item.over.withEvent(id, now));
   }
 

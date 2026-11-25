@@ -6,6 +6,13 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.288.1
+
+- Cancelling or deleting something that was only given a new version
+  elsewhere (its etag), with nothing else about it changed, no longer
+  stops to ask: it's sent again to the new version. When it does ask, the
+  list of what changed leaves out the etag.
+
 ## 7.288.0
 
 - When a goal's expected to start says the day so you can picture it:
