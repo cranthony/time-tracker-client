@@ -5,6 +5,7 @@ import 'package:time_tracker_client/models/event.dart';
 import 'package:time_tracker_client/services/events_repository.dart';
 import 'package:time_tracker_client/services/mcp_client.dart';
 import 'package:time_tracker_client/services/proposal_repository.dart';
+import 'package:time_tracker_client/widgets/event_summary_dialog.dart';
 import 'package:time_tracker_client/widgets/follow_through_dialog.dart';
 import 'package:time_tracker_client/widgets/hotkeys.dart';
 import 'package:time_tracker_client/widgets/other_events.dart';
@@ -160,6 +161,49 @@ void main() {
       );
 
       expect(counted, isNull);
+    });
+
+    testWidgets('cancelling one event from its dialog asks the same, '
+        'by key too', (tester) async {
+      final cancelled = <bool>[];
+      final hotkeys = Hotkeys();
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorObservers: [hotkeys],
+          builder: (context, child) =>
+              HotkeyScope(hotkeys: hotkeys, child: child!),
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showEventSummaryDialog(
+                context,
+                a,
+                save: (_) async => const [],
+                cancel: (counts) async {
+                  cancelled.add(counts);
+                  return const [];
+                },
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Cancel event'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel an event?'), findsOneWidget);
+
+      // J to its switch, Enter to count it, Ctrl+Enter to cancel it.
+      await press(tester, LogicalKeyboardKey.keyJ);
+      expect(focused(), 'Call Mom');
+      await press(tester, LogicalKeyboardKey.enter);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      expect(cancelled, [true]);
     });
 
     testWidgets('asks nothing when nothing is cancelled', (tester) async {

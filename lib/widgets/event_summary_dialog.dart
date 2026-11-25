@@ -30,9 +30,8 @@ import 'entity_links.dart';
 import 'error_sheet.dart';
 import 'color_picker.dart';
 import 'event_description.dart';
-import 'event_dialog.dart' show followThroughOption;
 import '../outbox/event_outbox.dart' show allWaiting;
-import 'follow_through_dialog.dart' show CalledOff;
+import 'follow_through_dialog.dart' show CalledOff, askFollowThrough;
 import 'hotkeys.dart';
 import 'other_events.dart';
 import 'waiting_note.dart';
@@ -42,7 +41,6 @@ import 'goal_icon.dart';
 import 'goal_picker.dart';
 import 'picker_sheet.dart';
 import 'plow_icon.dart';
-import 'properties_dialog.dart' show ConfirmOption, confirmationContent;
 import 'recurrence_dialog.dart';
 import 'repeat_editor.dart';
 import 'share_dialog.dart';
@@ -101,11 +99,6 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
   bool repeatable = false,
 }) {
   final seriesId = event.properties['recurring_event_id'] as String?;
-  final day = MaterialLocalizations.of(context).formatMediumDate(event.start);
-  final summary = switch (event.summary) {
-    final s? when s.isNotEmpty => '"$s"',
-    _ => 'This event',
-  };
   return showDialog<SummaryOutcome<List<Event>>>(
     context: context,
     builder: (_) => _SummaryDialog<List<Event>>(
@@ -135,14 +128,17 @@ Future<SummaryOutcome<List<Event>>?> showEventSummaryDialog(
           ? null
           : _Removal(
               tooltip: 'Cancel event',
-              question: 'Cancel this event?',
-              explanation:
-                  '$summary on $day leaves the list.'
-                  '${seriesId == null ? '' : ' The rest of the series stays.'}'
-                  " This can't be undone.",
-              keepLabel: 'Keep event',
-              label: 'Cancel event',
-              option: followThroughOption,
+              // As cancelling several asks: whether it counts against
+              // follow-through.
+              confirm: (context) async => switch (await askFollowThrough(
+                context,
+                [event],
+                makingRoom: false,
+                note: seriesId == null ? null : 'The rest of the series stays.',
+              )) {
+                null => null,
+                final counts => counts.isNotEmpty,
+              },
               run: cancel,
             ),
       openSeries: switch ((openSeries, seriesId)) {
@@ -201,10 +197,12 @@ Future<List<Event>?> showNewEventDialog(
       remove: switch (clear) {
         final clear? => _Removal(
           tooltip: 'Clear this time instead',
-          question: clear.question,
-          explanation: clear.explanation,
-          keepLabel: 'Keep them',
-          label: clear.label,
+          confirm: _asking(
+            question: clear.question,
+            explanation: clear.explanation,
+            keepLabel: 'Keep them',
+            label: clear.label,
+          ),
           run: (_) => clear.run(),
         ),
         null => null,
@@ -268,12 +266,14 @@ Future<SummaryOutcome<List<Recurrence>>?> showSeriesSummaryDialog(
         // EventsRepository.deleteRecurrence.
         final delete? => _Removal(
           tooltip: 'Delete this and following events',
-          question: 'Delete this and following events?',
-          explanation:
-              'The event on $day and every one after it in the series are '
-              "deleted. Earlier ones stay as they are. This can't be undone.",
-          keepLabel: 'Keep events',
-          label: 'Delete events',
+          confirm: _asking(
+            question: 'Delete this and following events?',
+            explanation:
+                'The event on $day and every one after it in the series are '
+                "deleted. Earlier ones stay as they are. This can't be undone.",
+            keepLabel: 'Keep events',
+            label: 'Delete events',
+          ),
           run: (_) => delete(),
         ),
         null => null,
@@ -288,8 +288,6 @@ Map<String, Object?> _encoded(Map<String, Object?> changes) => {
     key: value is Repeat ? value.toJson() : value,
 };
 
-/// The trash can's action: what it asks, and [run]s once confirmed --
-/// with whether [option], if it offers one, was switched on.
 /// What a new event's trash can does instead of making it: clear the
 /// time, with [run], once [question] is answered with [label].
 typedef ClearTime = ({
@@ -299,25 +297,55 @@ typedef ClearTime = ({
   Future<List<Event>> Function() run,
 });
 
+/// The trash can's action: [confirm] asks first, and [run]s it once
+/// confirmed.
 class _Removal {
   const _Removal({
     required this.tooltip,
-    required this.question,
-    required this.explanation,
-    required this.keepLabel,
-    required this.label,
+    required this.confirm,
     required this.run,
-    this.option,
   });
 
   final String tooltip;
-  final String question;
-  final String explanation;
-  final String keepLabel;
-  final String label;
-  final ConfirmOption? option;
+
+  /// Asks whether to go ahead: null to call it off, else what to [run] it
+  /// with -- for cancelling an event, whether it counts against
+  /// follow-through.
+  final Future<bool?> Function(BuildContext context) confirm;
   final Future<Object?> Function(bool option) run;
 }
+
+/// [_Removal.confirm] asking [question], with [explanation]: [label] goes
+/// ahead, [keepLabel] calls it off.
+Future<bool?> Function(BuildContext context) _asking({
+  required String question,
+  required String explanation,
+  required String keepLabel,
+  required String label,
+}) => (context) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(question),
+      content: Text(explanation),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: Text(keepLabel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          style: FilledButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            foregroundColor: Theme.of(context).colorScheme.onError,
+          ),
+          child: Text(label),
+        ),
+      ],
+    ),
+  );
+  return confirmed == true ? false : null;
+};
 
 /// The properties the dialog edits, one at a time.
 enum _Field {
@@ -693,36 +721,8 @@ class _SummaryDialogState<T> extends State<_SummaryDialog<T>> {
   }
 
   Future<void> _confirmRemove(_Removal removal) async {
-    var on = removal.option?.initial ?? false;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(removal.question),
-          content: confirmationContent(
-            removal.explanation,
-            removal.option,
-            on: on,
-            toggle: (value) => setState(() => on = value),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: Text(removal.keepLabel),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error,
-                foregroundColor: Theme.of(context).colorScheme.onError,
-              ),
-              child: Text(removal.label),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (confirmed == true && mounted) await _run(() => removal.run(on));
+    final option = await removal.confirm(context);
+    if (option != null && mounted) await _run(() => removal.run(option));
   }
 
   /// Whether [key] can be changed now, tapped or by its hotkey.

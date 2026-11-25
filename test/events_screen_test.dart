@@ -743,29 +743,35 @@ void main() {
       await openWork(tester, repo);
       await tester.tap(find.text('Cancel event'));
       await tester.pumpAndSettle();
-      expect(find.text('Cancel this event?'), findsOneWidget);
-      await tester.tap(find.text('Cancel event').last);
+      // Asked as cancelling several is.
+      expect(find.text('Cancel an event?'), findsOneWidget);
+      await tester.tap(find.text('Cancel it'));
       await tester.pumpAndSettle();
-      // Cancelled with delete_event, not saved -- counting against
-      // follow-through, as the switch starts.
+      // Cancelled with delete_event, not saved -- a change of plan, as
+      // its switch starts.
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('e1', true)]);
+      expect(repo.deleted, [('e1', false)]);
       // The server doesn't list cancelled events, so it leaves the list.
       expect(find.text('Event cancelled.'), findsOneWidget);
       expect(find.text('9:00 AM – 10:30 AM'), findsNothing);
     });
 
-    testWidgets('cancelling it can be just a change of plan', (tester) async {
+    testWidgets('cancelling it can count against follow-through', (
+      tester,
+    ) async {
       final repo = _RecordingRepository([work()]);
       await openWork(tester, repo);
       await tester.tap(find.text('Cancel event'));
       await tester.pumpAndSettle();
-      expect(find.text('Count against follow-through'), findsOneWidget);
-      await tester.tap(find.text('Count against follow-through'));
+      await tester.tap(find.textContaining('A change of plan'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel event').last);
+      expect(
+        find.textContaining('Counts against follow-through'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Cancel it'));
       await tester.pumpAndSettle();
-      expect(repo.deleted, [('e1', false)]);
+      expect(repo.deleted, [('e1', true)]);
       expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
@@ -787,7 +793,8 @@ void main() {
   });
 
   group('the event summary', () {
-    Event work() => Event.fromJson({
+    Event work({Map<String, Object?> properties = const {}}) => Event.fromJson({
+      ...properties,
       'id': 'e1',
       'summary': 'Work',
       'start': localIsoTimestamp(at(30, 9)),
@@ -1085,38 +1092,31 @@ void main() {
       await open(tester, repo);
       await tester.tap(find.byTooltip('Cancel event'));
       await tester.pumpAndSettle();
-      expect(find.text('Cancel this event?'), findsOneWidget);
-      expect(
-        find.text(
-          '"Work" on Wed, Sep 30 leaves the list. This can\'t be undone.',
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(find.text('Keep event'));
+      // Asked as cancelling several is.
+      expect(find.text('Cancel an event?'), findsOneWidget);
+      await tester.tap(find.text('Keep it'));
       await tester.pumpAndSettle();
       expect(repo.saved, isEmpty);
+      expect(repo.deleted, isEmpty);
 
       await tester.tap(find.byTooltip('Cancel event'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel event'));
+      await tester.tap(find.text('Cancel it'));
       await tester.pumpAndSettle();
+      // A change of plan, as its switch starts.
       expect(repo.saved, isEmpty);
-      expect(repo.deleted, [('e1', true)]);
+      expect(repo.deleted, [('e1', false)]);
       expect(find.text('Event cancelled.'), findsOneWidget);
     });
 
-    testWidgets('the trash can can make it just a change of plan', (
-      tester,
-    ) async {
-      final repo = _RecordingRepository([work()]);
+    testWidgets('in a series, says the rest of it stays', (tester) async {
+      final repo = _RecordingRepository([
+        work(properties: {'recurring_event_id': 's1'}),
+      ]);
       await open(tester, repo);
       await tester.tap(find.byTooltip('Cancel event'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Count against follow-through'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel event'));
-      await tester.pumpAndSettle();
-      expect(repo.deleted, [('e1', false)]);
+      expect(find.text('The rest of the series stays.'), findsOneWidget);
     });
 
     testWidgets('clears its priority and description', (tester) async {
@@ -1595,7 +1595,7 @@ void main() {
       // B is cancelled to make room: asked whether that counts against
       // follow-through. Kept, nothing's saved, and it's still open.
       expect(find.text('Cancel an event to make room?'), findsOneWidget);
-      await tester.tap(find.text('Keep them'));
+      await tester.tap(find.text('Keep it'));
       await settle(tester);
       expect(repo.created, isEmpty);
       expect(find.text('Create'), findsOneWidget);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/event.dart';
 import '../models/plan_action.dart';
+import 'follow_through_dialog.dart';
 import 'properties_dialog.dart';
 
 /// Shows every property of [event], as the server sent it, under its
@@ -22,9 +23,9 @@ import 'properties_dialog.dart';
 /// page to put the event's box up at, to move it there (see [timesHint],
 /// under them as they're edited).
 ///
-/// With [cancel] too, "Cancel event" cancels it after asking -- and asks
-/// whether that counts against follow-through (see
-/// [followThroughOption]) -- returning what [cancel] returned.
+/// With [cancel] too, "Cancel event" cancels it after asking whether that
+/// counts against follow-through, as cancelling several does
+/// ([askFollowThrough]) -- returning what [cancel] returned.
 ///
 /// What of it's [waiting] for a change to be saved -- its fields, or all
 /// of it -- can't be changed, and says so (see [waitsFor]).
@@ -55,10 +56,7 @@ Future<List<Event>?> showEventDialog(
     kinds: _kinds,
     // Every event has one; the rest can be cleared (see clearableFields).
     required: const {'summary'},
-    hints: const {
-      'start': timesHint,
-      'end': timesHint,
-    },
+    hints: const {'start': timesHint, 'end': timesHint},
     links: {
       if ((openSeries, event.properties['recurring_event_id']) case (
         final open?,
@@ -75,7 +73,7 @@ Future<List<Event>?> showEventDialog(
             // Cancelling isn't an update: see OneWayAction below.
             (true, final cancel?) => cancel(
               event,
-              changes[followThroughOption.key] == true,
+              changes[_countsAgainst] == true,
             ),
             _ => save(event, changes),
           },
@@ -87,15 +85,19 @@ Future<List<Event>?> showEventDialog(
     actions: actions,
     oneWayAction: event.isCancelled || cancel == null
         ? null
-        : const OneWayAction(
+        : OneWayAction(
             label: 'Cancel event',
-            question: 'Cancel this event?',
-            explanation:
-                "This can't be undone. The event leaves the list once it's "
-                'cancelled.',
-            keepLabel: 'Keep event',
-            changes: {'is_cancelled': true},
-            option: followThroughOption,
+            confirm: (context) async => switch (await askFollowThrough(
+              context,
+              [event],
+              makingRoom: false,
+            )) {
+              null => null,
+              final counts => {
+                'is_cancelled': true,
+                _countsAgainst: counts.isNotEmpty,
+              },
+            },
           ),
     signInHint: 'Sign in again from the Events page, then try again.',
     waiting: waiting,
@@ -108,18 +110,8 @@ const timesHint =
     'rather than writing them: ✓ there moves it, the events in its way '
     'kept, pushed or cancelled from the lists.';
 
-/// The switch cancelling an event offers: whether it counts against the
-/// follow-through of whoever a follow-through trait tracks it for, rather
-/// than being just a change of plan. On to begin with: turning it off says
-/// the plan merely changed.
-const followThroughOption = ConfirmOption(
-  key: 'counts_against_follow_through',
-  label: 'Count against follow-through',
-  explanation:
-      'A commitment dropped, not just a change of plan: it lowers the '
-      'follow-through of the people, and for the actions, a trait tracks.',
-  initial: true,
-);
+/// Saved with a cancel: whether it counts against follow-through.
+const _countsAgainst = 'counts_against_follow_through';
 
 const _kinds = {
   'summary': PropertyKind.text,
