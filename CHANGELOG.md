@@ -6,6 +6,12 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.289.1
+
+- C on today puts the new event's cursor at now only when now is in view;
+  scrolled away from it, the cursor goes in the middle of what's in view,
+  as on other days.
+
 ## 7.289.0
 
 - Cancelling one event -- from its trash can, or "Cancel event" in its

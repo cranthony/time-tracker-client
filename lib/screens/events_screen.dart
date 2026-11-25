@@ -3490,14 +3490,16 @@ class _EventsScreenState extends State<EventsScreen> {
       snapToGrid(time, AppSettings.of(context).grid);
 
   /// Starts making a new event: a cursor across the day shown, at now if
-  /// that's today, or else the middle of what's in view.
+  /// that's today and in view, or else the middle of what's in view.
   void _startCreating([DateTime? from]) {
     if (_saidReadOnly()) return;
     final now = widget.clock();
     DateTime at;
     if (from != null) {
       at = from;
-    } else if (!now.isBefore(_day) && now.isBefore(_dayEnd)) {
+    } else if (!now.isBefore(_day) &&
+        now.isBefore(_dayEnd) &&
+        (!_scroll.hasClients || _timeInView(now))) {
       at = now;
     } else if (_scroll.hasClients) {
       final middle = _scroll.offset + _scroll.position.viewportDimension / 2;
@@ -3635,6 +3637,14 @@ class _EventsScreenState extends State<EventsScreen> {
     final y = _startOffset(event);
     return y >= position.pixels + 24 &&
         y <= position.pixels + position.viewportDimension - 96;
+  }
+
+  /// Whether [time] shows in the timeline's view.
+  bool _timeInView(DateTime time) {
+    final position = _scroll.position;
+    final y = _offset(time);
+    return y >= position.pixels &&
+        y <= position.pixels + position.viewportDimension;
   }
 
   /// Whether any of [event] shows in the timeline's view.

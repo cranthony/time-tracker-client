@@ -307,4 +307,18 @@ void main() {
     await press(tester, LogicalKeyboardKey.keyC);
     expect(box(tester).cursor, at(30, 13));
   });
+
+  testWidgets('C on today with now out of view puts the cursor in view', (
+    tester,
+  ) async {
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+    // Scrolled to the morning, now's well below the view.
+    final scroll = timelineScroll(tester);
+    scroll.jumpTo(0);
+    await tester.pumpAndSettle();
+    await press(tester, LogicalKeyboardKey.keyC);
+    final cursor = box(tester).cursor;
+    expect(cursor.isBefore(at(30, 6)), isTrue, reason: '$cursor');
+  });
 }
