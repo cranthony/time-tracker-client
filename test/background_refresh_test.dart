@@ -509,6 +509,49 @@ void main() {
       expect(checks, hasLength(2));
     });
 
+    testWidgets('checks nothing while out of sight, and at once when back '
+        'if one came due', (tester) async {
+      var now = DateTime(2026, 10, 7, 12);
+      final checks = <DateTime>[];
+      final refresh = BackgroundRefresh(
+        settings: AppSettings(persist: false),
+        supported: false,
+        clock: () => now,
+        lastRecord: () async => null,
+      );
+      Future<void> wait(Duration d) async {
+        now = now.add(d);
+        await tester.pump(d);
+      }
+
+      refresh.startLive(() async {
+        checks.add(now);
+        return true;
+      });
+      await wait(const Duration(minutes: 2));
+      refresh.pauseLive();
+      await wait(const Duration(hours: 8));
+      expect(checks, isEmpty);
+
+      // Overdue: at once.
+      refresh.resumeLive();
+      await tester.pump(Duration.zero);
+      expect(checks, [DateTime(2026, 10, 7, 20, 2)]);
+      await wait(const Duration(minutes: 5));
+      expect(checks, hasLength(2));
+
+      // Hidden and back before the next is due: when it's due.
+      await wait(const Duration(minutes: 1));
+      refresh.pauseLive();
+      await wait(const Duration(minutes: 1));
+      refresh.resumeLive();
+      await tester.pump(Duration.zero);
+      expect(checks, hasLength(2));
+      await wait(const Duration(minutes: 3));
+      expect(checks.last, DateTime(2026, 10, 7, 20, 12));
+      refresh.stopLive();
+    });
+
     testWidgets("checks again a moment later if it couldn't", (tester) async {
       var now = _now;
       var couldnt = true;
