@@ -321,7 +321,7 @@ Future<RefreshRecord> refreshCaches({
 /// Where nothing runs in the background (a browser's tab), the app checks
 /// while it's open instead ([startLive]): every [AppSettings.openRefresh],
 /// and at the routines' times, as [liveNext] says -- and the weather every
-/// [liveWeatherEvery].
+/// [liveWeatherEvery] -- but not while it's out of sight ([pauseLive]).
 class BackgroundRefresh extends ChangeNotifier {
   BackgroundRefresh({
     this.repository,
@@ -449,6 +449,31 @@ class BackgroundRefresh extends ChangeNotifier {
     _planLiveWeather();
   }
 
+  /// Whether the app's out of sight -- its tab hidden, say -- so it
+  /// doesn't check ([pauseLive]).
+  bool _paused = false;
+
+  /// While the app's out of sight -- its tab in the background, or the
+  /// window minimized -- checks nothing: no one's looking, and a tab left
+  /// open would otherwise fetch everything every few minutes all night.
+  /// [resumeLive] picks up again.
+  void pauseLive() {
+    _paused = true;
+    _liveTimer?.cancel();
+    _liveWeatherTimer?.cancel();
+    _liveTimer = _liveWeatherTimer = _liveWeatherEvery = null;
+  }
+
+  /// Back in sight after [pauseLive]: checks at once if one came due while
+  /// it was away, else when the next is due; and the weather on its
+  /// schedule again.
+  void resumeLive() {
+    if (!_paused) return;
+    _paused = false;
+    _planLive();
+    _planLiveWeather();
+  }
+
   /// Stops what [startLive] started.
   void stopLive() {
     _check = null;
@@ -477,7 +502,7 @@ class BackgroundRefresh extends ChangeNotifier {
   }
 
   void _planLive() {
-    if (_check == null) return;
+    if (_check == null || _paused) return;
     _liveTimer?.cancel();
     final at = liveNext;
     if (at == null) return;
@@ -497,6 +522,7 @@ class BackgroundRefresh extends ChangeNotifier {
     }
     if (!checked) {
       _liveTimer?.cancel();
+      if (_paused) return;
       _liveTimer = Timer(liveRetry, _checkLive);
       return;
     }
@@ -511,7 +537,7 @@ class BackgroundRefresh extends ChangeNotifier {
 
   void _planLiveWeather() {
     final weather = this.weather;
-    if (_check == null || weather == null) return;
+    if (_check == null || _paused || weather == null) return;
     final every = weather.enabled ? liveWeatherEvery : null;
     if (every == _liveWeatherEvery && _liveWeatherTimer != null) return;
     _liveWeatherTimer?.cancel();

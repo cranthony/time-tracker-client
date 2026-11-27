@@ -627,6 +627,10 @@ class _TimeTrackerAppState extends State<TimeTrackerApp> {
     _lifecycle = AppLifecycleListener(
       onResume: _onForeground,
       onPause: _onBackground,
+      // Out of sight -- a browser's tab in the background, say -- the
+      // checks above wait till it's back.
+      onHide: () => widget.backgroundRefresh?.pauseLive(),
+      onShow: () => widget.backgroundRefresh?.resumeLive(),
     );
     _addNoteShortcut.start();
     _startCalendarWidget();

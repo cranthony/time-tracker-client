@@ -760,11 +760,13 @@ when the next update is, and what the last did. A server without the
 hints leaves just the 6-hourly updates.
 
 On the web and Windows nothing runs while the app is closed, so it checks
-while it's open instead -- in a browser, while its tab is open, behind
-other tabs too: every 5 minutes (or 1 to 30, or not at all), and 10
-minutes after each routine's time, fetching what the page shows afresh
-as pulling it down does, and the goals. Not while a dialog, sheet or menu
-is open: once it's closed. The weather is fetched every 15 minutes. There
+while it's open instead -- in a browser, while its tab is open and in
+sight: every 5 minutes (or 1 to 30, or not at all), and 10 minutes after
+each routine's time, fetching what the page shows afresh as pulling it
+down does, and the goals. Not while a dialog, sheet or menu is open: once
+it's closed. Not while the tab is behind other tabs, or the window is
+minimized, either: back in sight, it checks at once if a check came due
+meanwhile. The weather is fetched every 15 minutes. There
 the Background updates page warns that the tab, or the app, must be kept
 open, and has those settings, when it checks next and when it last did.
 Anywhere, R presses the page's refresh button, as pulling the page down

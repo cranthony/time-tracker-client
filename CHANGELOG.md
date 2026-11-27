@@ -6,6 +6,14 @@ app, following [semantic versioning](https://semver.org): patch for fixes,
 minor for new features, major for changes that break something you rely
 on. Add the new version's section here at the same time; CI checks both.
 
+## 7.290.0
+
+- In a browser (and on Windows), the app no longer checks the server
+  every few minutes while it's out of sight -- its tab behind other tabs,
+  or its window minimized. Back in sight, it checks at once if a check
+  came due meanwhile. A tab left open overnight no longer fetches
+  everything again all night.
+
 ## 7.289.1
 
 - C on today puts the new event's cursor at now only when now is in view;
